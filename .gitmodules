@@ -1,0 +1,3 @@
+[submodule "src/walrus"]
+	path = src/walrus
+	url = git@github.com:PolymathicAI/walrus.git
