@@ -37,31 +37,30 @@ os.makedirs(config_base_path, exist_ok=True)
 # And we'll download the weights from huggingface
 import subprocess
 
-if not os.path.exists(f"{config_base_path}/extended_config.yaml"):
+config_file = f"{config_base_path}/extended_config.yaml"
+checkpoint_file = f"{checkpoint_base_path}/walrus.pt"
+
+if not os.path.exists(config_file):
     subprocess.run(
         [
             "wget",
             "https://huggingface.co/polymathic-ai/walrus/resolve/main/extended_config.yaml",
             "-O",
-            f"{config_base_path}/extended_config.yaml",
+            config_file,
         ],
         check=True,
     )
-else:
-    print(f"extended_config.yaml already exists, skipping download.")
 
-if not os.path.exists(f"{checkpoint_base_path}/walrus.pt"):
+if not os.path.exists(checkpoint_file):
     subprocess.run(
         [
             "wget",
             "https://huggingface.co/polymathic-ai/walrus/resolve/main/walrus.pt",
             "-O",
-            f"{checkpoint_base_path}/walrus.pt",
+            checkpoint_file,
         ],
         check=True,
     )
-else:
-    print(f"walrus.pt already exists, skipping download.")
 
 
 # In[2]:
@@ -80,12 +79,8 @@ from walrus.trainer.normalization_strat import (
     normalize_target,
 )
 
-# checkpoint_path = f"{checkpoint_base_path}/walrus.pt"
-checkpoint_path = os.path.join(checkpoint_base_path, "walrus.pt")
-# checkpoint_config_path = f"{config_base_path}/extended_config.yaml"
-checkpoint_config_path = os.path.join(
-    config_base_path, "bubbleml_poolboil_subcool.yaml"
-)
+checkpoint_path = f"{checkpoint_base_path}/walrus.pt"
+checkpoint_config_path = f"{config_base_path}/extended_config.yaml"
 checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)["app"][
     "model"
 ]
@@ -112,36 +107,25 @@ print(OmegaConf.to_yaml(config))
 # In[3]:
 
 
-# well_base_path = "/mnt/home/polymathic/ceph/the_well/datasets/"
-data_base_path = os.path.join(
-    ".",
-    "processed_data",
-    "data",
-)
+well_base_path = "/mnt/home/polymathic/ceph/the_well/datasets/"
+
 # First we're going to remove non-Well data since that uses absolute paths which are likely not on your system
-# with open_dict(config):
-# del config.data.module_parameters.well_dataset_info.flowbench_FPO_NS_2D_512x128_harmonics
+with open_dict(config):
+    del config.data.module_parameters.well_dataset_info.flowbench_FPO_NS_2D_512x128_harmonics
 
 # The dataset objects precompute a number of dataset stats on init, so this may take a little while
-# data_module = instantiate(
-#     config.data.module_parameters,
-#     well_base_path=data_base_path,
-#     world_size=1,
-#     rank=0,
-#     data_workers=1,
-#     field_index_map_override=config.data.get(
-#         "field_index_map_override", {}
-#     ),  # Use the previous field maps to avoid cycling through the data
-#     prefetch_field_names=False,
-# )
 data_module = instantiate(
     config.data.module_parameters,
-    well_base_path=data_base_path,
+    well_base_path=well_base_path,
     world_size=1,
     rank=0,
     data_workers=1,
+    field_index_map_override=config.data.get(
+        "field_index_map_override", {}
+    ),  # Use the previous field maps to avoid cycling through the data
     prefetch_field_names=False,
 )
+
 
 # From here, we want to use the `field_to_index_map` object to determine the dimension of the encoder. Since we're
 # just using the Well data in this example, this shouldn't change from the pre-existing map, but we'll get it from the dataset
