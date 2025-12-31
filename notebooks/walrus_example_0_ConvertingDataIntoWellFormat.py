@@ -14,6 +14,7 @@
 
 # get_ipython().run_line_magic("matplotlib", "inline")
 import os
+import shutil
 import subprocess
 
 import matplotlib.pyplot as plt
@@ -38,7 +39,7 @@ os.makedirs(download_path, exist_ok=True)
 
 # map each HF subfolder to a distinct local subpath
 materials = {
-    "PoolBoiling-Subcooled-R515B-2D": os.path.join(download_path, "R515B"),
+    # "PoolBoiling-Subcooled-R515B-2D": os.path.join(download_path, "R515B"),
     "PoolBoiling-Subcooled-FC72-2D": os.path.join(download_path, "FC72"),
 }
 
@@ -185,7 +186,9 @@ def translate_bubble(hdf5_path, json_path, subname, out_path):
         t = np.linspace(0, json_file["t_final"], 2001, endpoint=True)
 
     # Now we can create the new HDF5 file
-    outpath = out_path + f"bubbleML_PoolBoiling-Subcooled_{subname}_T{baseT}.hdf5"
+    outpath = os.path.join(
+        out_path, f"bubbleML_PoolBoiling-Subcooled_{subname}_T{baseT}.hdf5"
+    )
     with h5py.File(outpath, "w") as f:
         # Base level
         f.attrs["dataset_name"] = f"bubbleML_PoolBoiling-Subcooled"
@@ -375,15 +378,18 @@ def translate_bubble(hdf5_path, json_path, subname, out_path):
 
 
 # Clean up first
-os.rmdir(os.path.join(processed_path, "data"))
-os.mkdir(os.path.join(processed_path, "data"))
-os.mkdir(os.path.join(processed_path, "data", "train"))
-os.mkdir(os.path.join(processed_path, "data", "valid"))
-os.mkdir(os.path.join(processed_path, "data", "test"))
+if os.path.exists(os.path.join(processed_path, "data")):
+    shutil.rmtree(os.path.join(processed_path, "data"))
+
+os.makedirs(os.path.join(processed_path, "data"), exist_ok=True)
+os.makedirs(os.path.join(processed_path, "data", "train"), exist_ok=True)
+os.makedirs(os.path.join(processed_path, "data", "valid"), exist_ok=True)
+os.makedirs(os.path.join(processed_path, "data", "test"), exist_ok=True)
+
 
 materials = [
     "FC72",
-    "R515B",
+    # "R515B",
 ]
 for material in materials:
     base_path = os.path.join(download_path, material)
@@ -405,14 +411,14 @@ for material in materials:
 valid_files = [
     "bubbleML_PoolBoiling-Subcooled_FC72_T107.hdf5",
     "bubbleML_PoolBoiling-Subcooled_FC72_T97.hdf5",
-    "bubbleML_PoolBoiling-Subcooled_R515B_T30.hdf5",
-    "bubbleML_PoolBoiling-Subcooled_R515B_T40.hdf5",
+    # "bubbleML_PoolBoiling-Subcooled_R515B_T30.hdf5",
+    # "bubbleML_PoolBoiling-Subcooled_R515B_T40.hdf5",
 ]
 test_files = [
     "bubbleML_PoolBoiling-Subcooled_FC72_T107.hdf5",
     "bubbleML_PoolBoiling-Subcooled_FC72_T97.hdf5",
-    "bubbleML_PoolBoiling-Subcooled_R515B_T30.hdf5",
-    "bubbleML_PoolBoiling-Subcooled_R515B_T40.hdf5",
+    # "bubbleML_PoolBoiling-Subcooled_R515B_T30.hdf5",
+    # "bubbleML_PoolBoiling-Subcooled_R515B_T40.hdf5",
 ]
 
 # Now move validation and test files to their folders
@@ -420,8 +426,8 @@ for vf in valid_files:
     subprocess.run(
         [
             "mv",
-            f"{processed_path}/data/train/{vf}",
-            f"{processed_path}/data/valid/{vf}",
+            os.path.join(processed_path, "data", "train", vf),
+            os.path.join(processed_path, "data", "valid", vf),
         ],
         check=True,
     )
@@ -461,5 +467,5 @@ plt.show()
 # To see how you'd use this in a Walrus model, check out the next [notebook](walrus_example_1_RunningWalrus.ipynb).
 #
 # To see how you'd define a config file around this for use in the full Walrus codebase, check out the config file [here](https://github.com/PolymathicAI/walrus/blob/walrus/configs/data/bubbleml_poolboil_subcool.yaml).
-
+# https://github.com/PolymathicAI/walrus/blob/main/walrus/configs/data/bubbleml_poolboil_subcool.yaml
 #
