@@ -29,6 +29,14 @@
 
 import os
 
+# Change to the directory containing this notebook/script
+if "__file__" in globals():
+    notebook_dir = os.path.dirname(os.path.abspath(__file__))
+    print(notebook_dir)
+    os.chdir(notebook_dir)
+print(f"Current working directory: {os.getcwd()}")
+
+# Setup directory structure
 checkpoint_base_path = "./checkpoints/"
 config_base_path = "./configs/"
 os.makedirs(checkpoint_base_path, exist_ok=True)
@@ -79,8 +87,11 @@ from walrus.trainer.normalization_strat import (
     normalize_target,
 )
 
-checkpoint_path = f"{checkpoint_base_path}/walrus.pt"
-checkpoint_config_path = f"{config_base_path}/extended_config.yaml"
+# checkpoint_path = f"{checkpoint_base_path}/walrus.pt"
+# checkpoint_config_path = f"{config_base_path}/extended_config.yaml"
+checkpoint_path = checkpoint_file
+checkpoint_config_path = config_file
+# checkpoint_config_path = os.path.join(".", "configs", "bubbleml_poolboil_subcool.yaml")
 checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)["app"][
     "model"
 ]
@@ -107,11 +118,11 @@ print(OmegaConf.to_yaml(config))
 # In[3]:
 
 
-well_base_path = "/mnt/home/polymathic/ceph/the_well/datasets/"
-
+# well_base_path = "/mnt/home/polymathic/ceph/the_well/datasets/"
+well_base_path = "/home/krosenfeld/projects/walrus-workshop/notebooks/datasets"
 # First we're going to remove non-Well data since that uses absolute paths which are likely not on your system
-with open_dict(config):
-    del config.data.module_parameters.well_dataset_info.flowbench_FPO_NS_2D_512x128_harmonics
+# with open_dict(config):
+# del config.data.module_parameters.well_dataset_info.flowbench_FPO_NS_2D_512x128_harmonics
 
 # The dataset objects precompute a number of dataset stats on init, so this may take a little while
 data_module = instantiate(
@@ -120,9 +131,9 @@ data_module = instantiate(
     world_size=1,
     rank=0,
     data_workers=1,
-    field_index_map_override=config.data.get(
-        "field_index_map_override", {}
-    ),  # Use the previous field maps to avoid cycling through the data
+    # field_index_map_override=config.data.get(
+    #     "field_index_map_override", {}
+    # ),  # Use the previous field maps to avoid cycling through the data
     prefetch_field_names=False,
 )
 
@@ -137,8 +148,8 @@ data_module = instantiate(
 field_to_index_map = data_module.train_dataset.field_to_index_map
 # Retrieve the number of fields used in training
 # from the mapping of field to index and incrementing by 1
-total_input_fields = max(field_to_index_map.values()) + 1
-
+# total_input_fields = max(field_to_index_map.values()) + 1
+total_input_fields = 67  # We don't have all the Well so we grab from the errors
 model: torch.nn.Module = instantiate(
     config.model,
     n_states=total_input_fields,
@@ -170,7 +181,8 @@ revin = instantiate(config.trainer.revin)()  # This is a functools partial by de
 
 
 # Grab one trajectory to use as an example
-dataset_index = 3  # Corresponds to acoustic_scatter_inclusions
+# dataset_index = 3  # Corresponds to acoustic_scatter_inclusions
+dataset_index = 0
 dataset = data_module.rollout_val_datasets[dataset_index].sub_dsets[0]
 metadata = dataset.metadata
 
