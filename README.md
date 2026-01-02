@@ -12,7 +12,7 @@ sudo apt install ffmpeg
 **The well**
 Download limited dataset for example:
 ```
-the-well-download --dataset acoustic_scattering_inclusions --split test
+the-well-download --dataset turbulent_radiative_layer_2D
 ```
 
 ## References

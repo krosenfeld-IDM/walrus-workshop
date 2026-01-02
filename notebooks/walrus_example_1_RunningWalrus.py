@@ -182,7 +182,7 @@ revin = instantiate(config.trainer.revin)()  # This is a functools partial by de
 
 # Grab one trajectory to use as an example
 # dataset_index = 3  # Corresponds to acoustic_scatter_inclusions
-dataset_index = 1
+dataset_index = 0
 dataset = data_module.rollout_val_datasets[dataset_index].sub_dsets[0]
 metadata = dataset.metadata
 
@@ -223,6 +223,7 @@ import copy
 
 from walrus.trainer.training import expand_mask_to_match
 
+from alive_progress import alive_it
 
 def rollout_model(
     model,
@@ -274,11 +275,11 @@ def rollout_model(
         :, :rollout_steps
     ]  # If we set a maximum number of rollout steps, just cut it off now to save memory
     # Create a moving batch of one step at a time
-    # moving_batch = copy.deepcopy(batch)
-    moving_batch = batch
+    moving_batch = copy.deepcopy(batch)
+    # moving_batch = batch
     y_preds = []
     # Rollout the model - Causal in time gets more predictions from the first step
-    for i in range(train_rollout_limit - 1, rollout_steps):
+    for i in alive_it(range(train_rollout_limit - 1, rollout_steps)):
         # Don't fill causal_in_time here since that only affects y_ref
         inputs, _ = formatter.process_input(moving_batch)
         inputs = list(inputs)

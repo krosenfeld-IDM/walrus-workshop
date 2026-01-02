@@ -230,11 +230,11 @@ data:
             #     exclude_filters: []
             #     field_transforms:
             #         density: torch.zeros_like
-            acoustic_scattering_inclusions:
-                include_filters: []
-                exclude_filters: []
-                field_transforms:
-                    density: torch.zeros_like
+            # acoustic_scattering_inclusions:
+            #     include_filters: []
+            #     exclude_filters: []
+            #     field_transforms:
+            #         density: torch.zeros_like
             # acoustic_scattering_discontinuous:
             #     include_filters: []
             #     exclude_filters: []

@@ -7,7 +7,9 @@ authors = [
     { name = "Katherine Rosenfeld", email = "krosenf@gmail.com" }
 ]
 requires-python = "~=3.12"
-dependencies = []
+dependencies = [
+    "alive-progress>=3.3.0",
+]
 
 [project.scripts]
 walrus-workshop = "walrus_workshop:main"
