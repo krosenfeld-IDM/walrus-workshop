@@ -131,9 +131,9 @@ data_module = instantiate(
     world_size=1,
     rank=0,
     data_workers=1,
-    # field_index_map_override=config.data.get(
-    #     "field_index_map_override", {}
-    # ),  # Use the previous field maps to avoid cycling through the data
+    field_index_map_override=config.data.get(
+        "field_index_map_override", {}
+    ),  # Use the previous field maps to avoid cycling through the data
     prefetch_field_names=False,
 )
 
@@ -182,7 +182,7 @@ revin = instantiate(config.trainer.revin)()  # This is a functools partial by de
 
 # Grab one trajectory to use as an example
 # dataset_index = 3  # Corresponds to acoustic_scatter_inclusions
-dataset_index = 0
+dataset_index = 1
 dataset = data_module.rollout_val_datasets[dataset_index].sub_dsets[0]
 metadata = dataset.metadata
 
@@ -274,7 +274,8 @@ def rollout_model(
         :, :rollout_steps
     ]  # If we set a maximum number of rollout steps, just cut it off now to save memory
     # Create a moving batch of one step at a time
-    moving_batch = copy.deepcopy(batch)
+    # moving_batch = copy.deepcopy(batch)
+    moving_batch = batch
     y_preds = []
     # Rollout the model - Causal in time gets more predictions from the first step
     for i in range(train_rollout_limit - 1, rollout_steps):
@@ -283,7 +284,7 @@ def rollout_model(
         inputs = list(inputs)
         with torch.no_grad():
             normalization_stats = revin.compute_stats(
-                inputs[0], metadata, epsilon=model_epsilon
+                inputs[0], metadata#, epsilon=model_epsilon
             )
         # NOTE - Currently assuming only [0] (fields) needs normalization
         normalized_inputs = inputs[:]  # Shallow copy
@@ -389,168 +390,168 @@ make_video(
 )
 
 
-# In[10]:
+# # In[10]:
 
 
-from IPython.display import Video
+# from IPython.display import Video
 
-Video(
-    f"{output_dir}/{metadata.dataset_name}/rollout_video/epochac_inclusion_example_{metadata.dataset_name}.mp4",
-    width=640,
-    height=360,
-)
-
-
-# Awesome! We've made predictions with our pretrained model. Now let's look into what would happen if we needed to use the model for a downstream task and didn't want to go through the effort of first moving the data into the Well format.
-#
-# ## Part 2: Non-Well data
-#
-# Now lets see what we'd do in the case where we don't have Well structured data. The key difference here is that we'd need to define our own data transformation objects to make sure that every object in the pipeline is getting the data in the format they need it.
-#
-# We also need to make sure that our field_to_index_map is lined up with the new data which may include fields we haven't seen before.
-#
-# First let's get some extra imports from the library out of the way.
-
-# In[11]:
+# Video(
+#     f"{output_dir}/{metadata.dataset_name}/rollout_video/epochac_inclusion_example_{metadata.dataset_name}.mp4",
+#     width=640,
+#     height=360,
+# )
 
 
-from the_well.data.datasets import WellMetadata
-from walrus.utils.experiment_utils import align_checkpoint_with_field_to_index_map
+# # Awesome! We've made predictions with our pretrained model. Now let's look into what would happen if we needed to use the model for a downstream task and didn't want to go through the effort of first moving the data into the Well format.
+# #
+# # ## Part 2: Non-Well data
+# #
+# # Now lets see what we'd do in the case where we don't have Well structured data. The key difference here is that we'd need to define our own data transformation objects to make sure that every object in the pipeline is getting the data in the format they need it.
+# #
+# # We also need to make sure that our field_to_index_map is lined up with the new data which may include fields we haven't seen before.
+# #
+# # First let's get some extra imports from the library out of the way.
 
-# Let's make a hypothetical dataset. This dataset has 4 fields - velocity_x, velocity_y, density, and a new, never-before-seen field "blubber". First, we'll check out the existing `field_to_index_map` to see what we can use:
-
-# In[12]:
-
-
-field_to_index_map
-
-
-# Three of our fields are covered. Additionally, since Walrus is expecting dimensionally padded data, we'll also need to include a velocity_x which we can concatenate to the end since these are treated as sets and the order doesn't matter.
-#
-# So we'll be passing fields {"velocity_x": 4, "velocity_y":5, "velocity_z": 6, "density": 28, "blubber": ?????} in the order [4, 5, 28, ????. 6].
-#
-# The question we need to answer is: how do we deal with blubber? This is fortunately easy enough, we just need to add an extra field to this mapping dictionary and pass it appropriately.
-
-# In[13]:
+# # In[11]:
 
 
-new_field_to_index_map = copy.deepcopy(field_to_index_map)
-new_field_to_index_map["blubber"] = (
-    max(field_to_index_map.values()) + 1
-)  # New index for "blubber"
+# from the_well.data.datasets import WellMetadata
+# from walrus.utils.experiment_utils import align_checkpoint_with_field_to_index_map
 
-model = instantiate(
-    config.model,
-    n_states=max(new_field_to_index_map.values()) + 1,
-)
+# # Let's make a hypothetical dataset. This dataset has 4 fields - velocity_x, velocity_y, density, and a new, never-before-seen field "blubber". First, we'll check out the existing `field_to_index_map` to see what we can use:
+
+# # In[12]:
 
 
-# Use the Walrus utility to align the checkpoint
-revised_model_checkpoint = align_checkpoint_with_field_to_index_map(
-    checkpoint_state_dict=checkpoint,
-    model_state_dict=model.state_dict(),
-    checkpoint_field_to_index_map=field_to_index_map,
-    model_field_to_index_map=new_field_to_index_map,
-)
-
-# Now load the aligned weights
-model.load_state_dict(revised_model_checkpoint)
-
-model.to(device)
-model.eval()
+# field_to_index_map
 
 
-# Now we just need to pass data with the right signature. From before, we know the model is using the following fields:
-# - `input_fields` - float tensor [B x T_in x H x W x D x C_var]
-# - `output_fields` - float tensor [B x T_out x H x W x D x C_var]
-# - `constant_fields` - Optional, float tensor[B x H x W x D x C_con]
-# - `boundary_conditions` - int tensor [Bx3x2]
-# - `padded_field_mask` - bool tensor [C_var]
-# - `field_indices` - Int tensor [C_var + C_con]
-# - `metadata` - WellMetadata - Not strictly necessary, but our functions above use this to help with logging, so we'll make one here too
+# # Three of our fields are covered. Additionally, since Walrus is expecting dimensionally padded data, we'll also need to include a velocity_x which we can concatenate to the end since these are treated as sets and the order doesn't matter.
+# #
+# # So we'll be passing fields {"velocity_x": 4, "velocity_y":5, "velocity_z": 6, "density": 28, "blubber": ?????} in the order [4, 5, 28, ????. 6].
+# #
+# # The question we need to answer is: how do we deal with blubber? This is fortunately easy enough, we just need to add an extra field to this mapping dictionary and pass it appropriately.
 
-# In[14]:
+# # In[13]:
 
 
-B = 1
-T_in = 6
-T_out = 10
-H = 128
-W = 128
-D = 1
-C_var = 5  # velocity_x, velocity_y, velocity_z, density, blubber
-C_con = 0  # No constant fields in this example
+# new_field_to_index_map = copy.deepcopy(field_to_index_map)
+# new_field_to_index_map["blubber"] = (
+#     max(field_to_index_map.values()) + 1
+# )  # New index for "blubber"
+
+# model = instantiate(
+#     config.model,
+#     n_states=max(new_field_to_index_map.values()) + 1,
+# )
 
 
-synthetic_trajectory_example = {
-    "input_fields": torch.randn(B, T_in, H, W, D, C_var, device=device),
-    "output_fields": torch.randn(B, T_out, H, W, D, C_var, device=device),
-    "constant_fields": torch.randn(B, H, W, D, C_con, device=device),
-    "boundary_conditions": torch.tensor(
-        [[[2, 2], [2, 2], [2, 2]] for _ in range(B)], device=device
-    ),  # Example BCs
-    "padded_field_mask": torch.tensor(
-        [True, True, True, True, False], device=device
-    ),  # Last field index is padded
-    "field_indices": torch.tensor(
-        [4, 5, 28, 67, 6], device=device
-    ),  # Indices for all fields
-    "metadata": WellMetadata(
-        dataset_name="synthetic_dataset",
-        n_spatial_dims=3,
-        field_names={
-            0: ["pressure", "blubber"],
-            1: ["velocity_x", "velocity_y", "velocity_z"],
-            2: [],
-        },
-        spatial_resolution=(128, 128, 1),
-        scalar_names=[],
-        constant_field_names={0: [], 1: [], 2: []},
-        constant_scalar_names=[],
-        boundary_condition_types=[],  # Doesn't matter
-        n_files=[],  # Doesn't matter
-        n_trajectories_per_file=[],  # Doesn't matter
-        n_steps_per_trajectory=[],  # Doesn't matter
-    ),
-}
+# # Use the Walrus utility to align the checkpoint
+# revised_model_checkpoint = align_checkpoint_with_field_to_index_map(
+#     checkpoint_state_dict=checkpoint,
+#     model_state_dict=model.state_dict(),
+#     checkpoint_field_to_index_map=field_to_index_map,
+#     model_field_to_index_map=new_field_to_index_map,
+# )
+
+# # Now load the aligned weights
+# model.load_state_dict(revised_model_checkpoint)
+
+# model.to(device)
+# model.eval()
 
 
-# In[15]:
+# # Now we just need to pass data with the right signature. From before, we know the model is using the following fields:
+# # - `input_fields` - float tensor [B x T_in x H x W x D x C_var]
+# # - `output_fields` - float tensor [B x T_out x H x W x D x C_var]
+# # - `constant_fields` - Optional, float tensor[B x H x W x D x C_con]
+# # - `boundary_conditions` - int tensor [Bx3x2]
+# # - `padded_field_mask` - bool tensor [C_var]
+# # - `field_indices` - Int tensor [C_var + C_con]
+# # - `metadata` - WellMetadata - Not strictly necessary, but our functions above use this to help with logging, so we'll make one here too
+
+# # In[14]:
 
 
-with torch.no_grad():
-    synthetic_trajectory_example["padded_field_mask"] = synthetic_trajectory_example[
-        "padded_field_mask"
-    ].to(device)  # We're going to want this out here too
-    inputs, y_ref = formatter.process_input(
-        synthetic_trajectory_example,
-        causal_in_time=model.causal_in_time,
-        predict_delta=True,
-        train=False,
-    )
-    fake_metadata = synthetic_trajectory_example["metadata"]
-    y_pred, y_ref = rollout_model(
-        model,
-        revin,
-        synthetic_trajectory_example,
-        formatter,
-        max_rollout_steps=200,
-        device=device,
-    )
-
-    # Lets get some extra info so we can visualize our data effectively
-    # Remove unused fields
-    y_pred, y_ref = (
-        y_pred[..., synthetic_trajectory_example["padded_field_mask"]],
-        y_ref[..., synthetic_trajectory_example["padded_field_mask"]],
-    )
-    # Collecting names to make detailed output logs
-    field_names = flatten_field_names(fake_metadata, include_constants=False)
-    used_field_names = [
-        f
-        for i, f in enumerate(field_names)
-        if synthetic_trajectory_example["padded_field_mask"][i]
-    ]
+# B = 1
+# T_in = 6
+# T_out = 10
+# H = 128
+# W = 128
+# D = 1
+# C_var = 5  # velocity_x, velocity_y, velocity_z, density, blubber
+# C_con = 0  # No constant fields in this example
 
 
-# Congratulations! Now you've used Walrus with both data in the Well format and independent data. Generally when using our training code, it's going to be much easier to use Well formatted data as it handles most of what we've just done automatically for Well formatted data. If you need some guidance on how to do that, we have an example in a second notebook.
+# synthetic_trajectory_example = {
+#     "input_fields": torch.randn(B, T_in, H, W, D, C_var, device=device),
+#     "output_fields": torch.randn(B, T_out, H, W, D, C_var, device=device),
+#     "constant_fields": torch.randn(B, H, W, D, C_con, device=device),
+#     "boundary_conditions": torch.tensor(
+#         [[[2, 2], [2, 2], [2, 2]] for _ in range(B)], device=device
+#     ),  # Example BCs
+#     "padded_field_mask": torch.tensor(
+#         [True, True, True, True, False], device=device
+#     ),  # Last field index is padded
+#     "field_indices": torch.tensor(
+#         [4, 5, 28, 67, 6], device=device
+#     ),  # Indices for all fields
+#     "metadata": WellMetadata(
+#         dataset_name="synthetic_dataset",
+#         n_spatial_dims=3,
+#         field_names={
+#             0: ["pressure", "blubber"],
+#             1: ["velocity_x", "velocity_y", "velocity_z"],
+#             2: [],
+#         },
+#         spatial_resolution=(128, 128, 1),
+#         scalar_names=[],
+#         constant_field_names={0: [], 1: [], 2: []},
+#         constant_scalar_names=[],
+#         boundary_condition_types=[],  # Doesn't matter
+#         n_files=[],  # Doesn't matter
+#         n_trajectories_per_file=[],  # Doesn't matter
+#         n_steps_per_trajectory=[],  # Doesn't matter
+#     ),
+# }
+
+
+# # In[15]:
+
+
+# with torch.no_grad():
+#     synthetic_trajectory_example["padded_field_mask"] = synthetic_trajectory_example[
+#         "padded_field_mask"
+#     ].to(device)  # We're going to want this out here too
+#     inputs, y_ref = formatter.process_input(
+#         synthetic_trajectory_example,
+#         causal_in_time=model.causal_in_time,
+#         predict_delta=True,
+#         train=False,
+#     )
+#     fake_metadata = synthetic_trajectory_example["metadata"]
+#     y_pred, y_ref = rollout_model(
+#         model,
+#         revin,
+#         synthetic_trajectory_example,
+#         formatter,
+#         max_rollout_steps=200,
+#         device=device,
+#     )
+
+#     # Lets get some extra info so we can visualize our data effectively
+#     # Remove unused fields
+#     y_pred, y_ref = (
+#         y_pred[..., synthetic_trajectory_example["padded_field_mask"]],
+#         y_ref[..., synthetic_trajectory_example["padded_field_mask"]],
+#     )
+#     # Collecting names to make detailed output logs
+#     field_names = flatten_field_names(fake_metadata, include_constants=False)
+#     used_field_names = [
+#         f
+#         for i, f in enumerate(field_names)
+#         if synthetic_trajectory_example["padded_field_mask"][i]
+#     ]
+
+
+# # Congratulations! Now you've used Walrus with both data in the Well format and independent data. Generally when using our training code, it's going to be much easier to use Well formatted data as it handles most of what we've just done automatically for Well formatted data. If you need some guidance on how to do that, we have an example in a second notebook.
