@@ -11,6 +11,7 @@ from walrus.trainer.normalization_strat import (
     normalize_target,
 )
 
+# Change teh working directory
 import os
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -158,55 +159,71 @@ with torch.no_grad():
 
 
 
-import matplotlib.pyplot as plt
-import numpy as np
+# import matplotlib.pyplot as plt
+# import numpy as np
 
-# Debug: Check shapes
-print(f"y_pred shape: {y_pred.shape}")
-print(f"y_ref shape: {y_ref.shape}")
+# # Debug: Check shapes
+# print(f"y_pred shape: {y_pred.shape}")
+# print(f"y_ref shape: {y_ref.shape}")
 
-# Ensure we're extracting 2D arrays correctly
-pred_data = y_pred[0, 0, :, :, 0].cpu().numpy()
-ref_data = y_ref[0, 0, :, :, 0].cpu().numpy()
+# # Ensure we're extracting 2D arrays correctly
+# pred_data = y_pred[0, 0, :, :, 0].cpu().numpy()
+# ref_data = y_ref[0, 0, :, :, 0].cpu().numpy()
 
-# Ensure data is 2D and float
-pred_data = np.squeeze(pred_data)
-ref_data = np.squeeze(ref_data)
+# # Ensure data is 2D and float
+# pred_data = np.squeeze(pred_data)
+# ref_data = np.squeeze(ref_data)
 
-print(f"pred_data shape: {pred_data.shape}, dtype: {pred_data.dtype}, min: {pred_data.min()}, max: {pred_data.max()}")
-print(f"ref_data shape: {ref_data.shape}, dtype: {ref_data.dtype}, min: {ref_data.min()}, max: {ref_data.max()}")
+# print(f"pred_data shape: {pred_data.shape}, dtype: {pred_data.dtype}, min: {pred_data.min()}, max: {pred_data.max()}")
+# print(f"ref_data shape: {ref_data.shape}, dtype: {ref_data.dtype}, min: {ref_data.min()}, max: {ref_data.max()}")
 
-def normalize_data(data):
-    return (data - data.min()) / (data.max() - data.min())
+# def normalize_data(data):
+#     return (data - data.min()) / (data.max() - data.min())
 
-plt.figure()
-plt.subplot(1, 2, 1)
-plt.pcolormesh(normalize_data(pred_data))
-plt.colorbar()
-plt.title('Prediction')
-plt.subplot(1, 2, 2)
-plt.pcolormesh(normalize_data(ref_data))
-plt.colorbar()
-plt.title('Reference')
-plt.savefig("figures/test0.png")
-plt.close()
+# plt.figure()
+# plt.subplot(1, 2, 1)
+# plt.pcolormesh(normalize_data(pred_data))
+# plt.colorbar()
+# plt.title('Prediction')
+# plt.subplot(1, 2, 2)
+# plt.pcolormesh(normalize_data(ref_data))
+# plt.colorbar()
+# plt.title('Reference')
+# plt.savefig("figures/test0.png")
+# plt.close()
 
-# Second figure
-pred_data_last = y_pred[0, -1, :, :, 0].cpu().numpy()
-ref_data_last = y_ref[0, -1, :, :, 0].cpu().numpy()
+# # Second figure
+# pred_data_last = y_pred[0, -1, :, :, 0].cpu().numpy()
+# ref_data_last = y_ref[0, -1, :, :, 0].cpu().numpy()
 
-pred_data_last = np.squeeze(pred_data_last)
-ref_data_last = np.squeeze(ref_data_last)
+# pred_data_last = np.squeeze(pred_data_last)
+# ref_data_last = np.squeeze(ref_data_last)
 
-plt.figure()
-plt.subplot(1, 2, 1)
-plt.pcolormesh(normalize_data(pred_data_last))
-plt.title('Prediction (last)')
-plt.subplot(1, 2, 2)
-plt.pcolormesh(normalize_data(ref_data_last))
-plt.colorbar()
-plt.title('Reference (last)')
-plt.savefig("figures/test1.png")
-plt.close()
+# plt.figure()
+# plt.subplot(1, 2, 1)
+# plt.pcolormesh(normalize_data(pred_data_last))
+# plt.title('Prediction (last)')
+# plt.subplot(1, 2, 2)
+# plt.pcolormesh(normalize_data(ref_data_last))
+# plt.colorbar()
+# plt.title('Reference (last)')
+# plt.savefig("figures/test1.png")
+# plt.close()
+
+from the_well.benchmark.metrics import make_video
+
+output_dir = "./figures/"
+
+print("Making video")
+make_video(
+    y_pred[0],  # First sample only in batch
+    y_ref[0],  # First sample only in batch
+    synthetic_trajectory_example["metadata"],
+    output_dir=output_dir,
+    epoch_number="_nonwell_example",  # Misleading parameter name, but duck typing lets it be used for naming the output. Needs upstream fix.
+    field_name_overrides=used_field_names,  # Fields actually used
+    size_multiplier=1.0,  #
+)
+
 
 print("done")
