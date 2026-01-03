@@ -75,7 +75,7 @@ revised_model_checkpoint = align_checkpoint_with_field_to_index_map(
     model_field_to_index_map=new_field_to_index_map,
 )
 
-model.load_state_dict(checkpoint)
+model.load_state_dict(revised_model_checkpoint)
 
 # Move to the device we want
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -94,7 +94,7 @@ revin = instantiate(config.trainer.revin)()  # This is a functools partial by de
 checkpoint_config_path = os.path.join(".", "configs", "extended_bubbleML_config.yaml")
 bubbleml_config = OmegaConf.load(checkpoint_config_path)
 
-# The dataset objects precompute a number of dataset stats on init, so this may take a little while
+# The dataset object with bubbleml
 bubbleml_data_module = instantiate(
     bubbleml_config.data.module_parameters,
     well_base_path=well_base_path,
@@ -108,8 +108,7 @@ bubbleml_data_module = instantiate(
 )
 
 # Grab one trajectory to use as an example
-# dataset_index = 3  # Corresponds to acoustic_scatter_inclusions
-dataset_index = 1
+dataset_index = 0
 dataset = bubbleml_data_module.rollout_val_datasets[dataset_index].sub_dsets[0]
 metadata = dataset.metadata
 
@@ -157,7 +156,7 @@ def rollout_model(
     revin,
     batch,
     formatter,
-    max_rollout_steps=200,
+    max_rollout_steps=100,
     model_epsilon=1e-5,
     device=torch.device("cpu"),
 ):
@@ -313,7 +312,7 @@ make_video(
     y_ref[0],  # First sample only in batch
     metadata,
     output_dir=output_dir,
-    epoch_number="ac_inclusion_example",  # Misleading parameter name, but duck typing lets it be used for naming the output. Needs upstream fix.
+    epoch_number="bubblml_example",  # Misleading parameter name, but duck typing lets it be used for naming the output. Needs upstream fix.
     field_name_overrides=used_field_names,  # Fields actually used
     size_multiplier=1.0,  #
 )
