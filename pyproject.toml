@@ -6,9 +6,12 @@ readme = "README.md"
 authors = [
     { name = "Katherine Rosenfeld", email = "krosenf@gmail.com" }
 ]
-requires-python = "~=3.12"
+requires-python = ">=3.12"
 dependencies = [
     "alive-progress>=3.3.0",
+    "clawpack>=5.13.1",
+    "notebook>=7.5.1",
+    "plotly>=6.5.0",
 ]
 
 [project.scripts]

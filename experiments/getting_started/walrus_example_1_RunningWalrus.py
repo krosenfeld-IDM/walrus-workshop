@@ -28,7 +28,7 @@
 
 
 import os
-
+from walrus_workshop import paths
 # Change to the directory containing this notebook/script
 if "__file__" in globals():
     notebook_dir = os.path.dirname(os.path.abspath(__file__))
@@ -37,16 +37,16 @@ if "__file__" in globals():
 print(f"Current working directory: {os.getcwd()}")
 
 # Setup directory structure
-checkpoint_base_path = "./checkpoints/"
-config_base_path = "./configs/"
+checkpoint_base_path = paths.checkpoints
+config_base_path = paths.configs
 os.makedirs(checkpoint_base_path, exist_ok=True)
 os.makedirs(config_base_path, exist_ok=True)
 
 # And we'll download the weights from huggingface
 import subprocess
 
-config_file = f"{config_base_path}/extended_config.yaml"
-checkpoint_file = f"{checkpoint_base_path}/walrus.pt"
+config_file = os.path.join(config_base_path, "extended_config.yaml")
+checkpoint_file = os.path.join(checkpoint_base_path, "walrus.pt")
 
 if not os.path.exists(config_file):
     subprocess.run(
@@ -119,7 +119,7 @@ print(OmegaConf.to_yaml(config))
 
 
 # well_base_path = "/mnt/home/polymathic/ceph/the_well/datasets/"
-well_base_path = "/home/krosenfeld/projects/walrus-workshop/notebooks/datasets"
+well_base_path = os.path.join(paths.data, "datasets")
 # First we're going to remove non-Well data since that uses absolute paths which are likely not on your system
 # with open_dict(config):
 # del config.data.module_parameters.well_dataset_info.flowbench_FPO_NS_2D_512x128_harmonics

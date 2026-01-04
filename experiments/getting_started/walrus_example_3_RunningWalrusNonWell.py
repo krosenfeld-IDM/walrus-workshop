@@ -10,19 +10,19 @@ from walrus.models import IsotropicModel
 from walrus.trainer.normalization_strat import (
     normalize_target,
 )
-
+from walrus_workshop import paths
 # Change teh working directory
 import os
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # Setup directory structure
-checkpoint_base_path = "./checkpoints/"
-config_base_path = "./configs/"
+checkpoint_base_path = paths.checkpoints
+config_base_path = paths.configs
 os.makedirs(checkpoint_base_path, exist_ok=True)
 os.makedirs(config_base_path, exist_ok=True)
 
-checkpoint_path = f"{checkpoint_base_path}/walrus.pt"
-checkpoint_config_path = f"{config_base_path}/extended_config.yaml"
+checkpoint_path = os.path.join(checkpoint_base_path, "walrus.pt")
+checkpoint_config_path = os.path.join(config_base_path, "extended_config.yaml")
 checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)["app"][
     "model"
 ]
@@ -31,7 +31,7 @@ config = OmegaConf.load(checkpoint_config_path)
 # Lets start by examining our config file
 print(OmegaConf.to_yaml(config))
 
-well_base_path = "/home/krosenfeld/projects/walrus-workshop/notebooks/datasets"
+well_base_path = os.path.join(paths.data, "datasets")
 # First we're going to remove non-Well data since that uses absolute paths which are likely not on your system
 # with open_dict(config):
 # del config.data.module_parameters.well_dataset_info.flowbench_FPO_NS_2D_512x128_harmonics

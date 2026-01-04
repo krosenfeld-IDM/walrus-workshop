@@ -10,19 +10,20 @@ from walrus.models import IsotropicModel
 from walrus.trainer.normalization_strat import (
     normalize_target,
 )
+from walrus_workshop import paths
 
 # Change teh working directory
 import os
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # Setup directory structure
-checkpoint_base_path = "./checkpoints/"
-config_base_path = "./configs/"
+checkpoint_base_path = paths.checkpoints 
+config_base_path = paths.configs
 os.makedirs(checkpoint_base_path, exist_ok=True)
 os.makedirs(config_base_path, exist_ok=True)
 
-checkpoint_path = f"{checkpoint_base_path}/walrus.pt"
-checkpoint_config_path = f"{config_base_path}/extended_config.yaml"
+checkpoint_path = os.path.join(checkpoint_base_path, "walrus.pt")
+checkpoint_config_path = os.path.join(config_base_path, "extended_config.yaml")
 checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)["app"][
     "model"
 ]
@@ -31,7 +32,7 @@ config = OmegaConf.load(checkpoint_config_path)
 # Lets start by examining our config file
 print(OmegaConf.to_yaml(config))
 
-well_base_path = "/home/krosenfeld/projects/walrus-workshop/notebooks/datasets"
+well_base_path = os.path.join(paths.data, "datasets")
 # First we're going to remove non-Well data since that uses absolute paths which are likely not on your system
 # with open_dict(config):
 # del config.data.module_parameters.well_dataset_info.flowbench_FPO_NS_2D_512x128_harmonics
@@ -93,29 +94,6 @@ W = 128
 D = 1
 C_var = 6  # velocity_x, velocity_y, velocity_z, density, pressure, blubber
 C_con = 0  # No constant fields in this example
-
-
-# trajectory_example = {
-#     "input_fields": torch.randn(B, T_in, H, W, D, C_var, device=device),
-#     "output_fields": torch.randn(B, T_out, H, W, D, C_var, device=device),
-#     "constant_fields": torch.randn(B, H, W, D, C_con, device=device),
-#     "boundary_conditions": torch.tensor([[[2, 2], [2, 2], [2, 2]] for _ in range(B)], device=device),  # Example BCs
-#     "padded_field_mask": torch.tensor([True, True, True, True, True, False], device=device),  # Last field index is padded
-#     "field_indices": torch.tensor([4, 5, 28, 67, 6], device=device),  # Indices for all fields
-#     "metadata": WellMetadata(
-#         dataset_name="synthetic_dataset",
-#         n_spatial_dims=3,
-#         field_names={0: ['density','pressure', 'blubber'], 1: ['velocity_x', 'velocity_y', 'velocity_z'], 2: []},
-#         spatial_resolution=(128, 128, 1),
-#         scalar_names=[], 
-#         constant_field_names={0: [], 1: [], 2: []},
-#         constant_scalar_names=[],
-#         boundary_condition_types=[], # Doesn't matter
-#         n_files =[], # Doesn't matter
-#         n_trajectories_per_file=[], # Doesn't matter
-#         n_steps_per_trajectory=[], # Doesn't matter
-#     ),
-# }
 
 from walrus_workshop.problems import init_sod
 import numpy as np

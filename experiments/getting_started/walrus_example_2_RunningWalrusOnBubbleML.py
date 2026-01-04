@@ -21,15 +21,15 @@ from walrus.trainer.normalization_strat import (
     normalize_target,
 )
 from walrus.utils.experiment_utils import align_checkpoint_with_field_to_index_map
-
+from walrus_workshop import paths
 # Change working directory
 import os
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-checkpoint_base_path = "./checkpoints/"
-config_base_path = "./configs/"
-checkpoint_path = f"{checkpoint_base_path}/walrus.pt"
-checkpoint_config_path = os.path.join(".", "configs", "extended_config.yaml")
+checkpoint_base_path = paths.checkpoints
+config_base_path = paths.configs
+checkpoint_path = os.path.join(checkpoint_base_path, "walrus.pt")
+checkpoint_config_path = os.path.join(config_base_path, "extended_config.yaml")
 checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)["app"][
     "model"
 ]
@@ -40,7 +40,7 @@ config = OmegaConf.load(checkpoint_config_path)
 
 
 # The dataset objects precompute a number of dataset stats on init, so this may take a little while
-well_base_path = "/home/krosenfeld/projects/walrus-workshop/notebooks/datasets"
+well_base_path = os.path.join(paths.data, "datasets")
 data_module = instantiate(
     config.data.module_parameters,
     well_base_path=well_base_path,

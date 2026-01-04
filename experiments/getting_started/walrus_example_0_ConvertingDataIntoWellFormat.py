@@ -19,6 +19,8 @@ import subprocess
 
 import matplotlib.pyplot as plt
 
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
 download_path = "./raw_data/"
 processed_path = "./processed_data/"
 
