@@ -302,6 +302,11 @@ data:
             #     include_filters: []
             #     exclude_filters: []
             #     path: /mnt/gpuxl/polymathic/WellFormattedExternalData/flowbench/flowbench_FPO_NS_2D_512x128_harmonics
+            # pdea_ins:
+            #     include_filters: []
+            #     exclude_filters: []
+            #     path: /home/krosenfeld/projects/walrus-workshop/notebooks/processed_data
+            #     normalization_path: stats.yaml            
 auto_resume: true
 folder_override: ""
 checkpoint_override: ""

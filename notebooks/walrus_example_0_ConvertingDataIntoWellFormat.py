@@ -181,6 +181,7 @@ def translate_bubble(hdf5_path, json_path, subname, out_path):
         vy = np.swapaxes(f["vely"][:], 1, 2)[None]
         vel = np.stack([vx, vy], -1)
         temp = np.swapaxes(f["temperature"][:], 1, 2)[None]
+        pressure = np.swapaxes(f["pressure"][:], 1, 2)[None]
         x_coords = f["x_centers"][:]
         y_coords = f["y_centers"][:]
         t = np.linspace(0, json_file["t_final"], 2001, endpoint=True)
@@ -338,19 +339,24 @@ def translate_bubble(hdf5_path, json_path, subname, out_path):
         )  # t0 indicates spatially varying scalar fields.
 
         # We have two of these, the sdf of the gas-liquid interface, and the temperature field
-        t0.attrs["field_names"] = ["gas-interface-sdf", "temperature"]
-        m = t0.create_dataset(
-            "gas-interface-sdf", data=gas_interface_sdf, dtype=np.float32
-        )
-        m.attrs["dim_varying"] = np.array(
-            [True, True]
-        )  # This field is defined over both spatial dims (ie, shape is ... X Y)
-        m.attrs["sample_varying"] = (
-            True  # This field varies between trajectories, so shape is now (trajectory, ..., X, Y)
-        )
-        m.attrs["time_varying"] = (
-            True  # This field varies over time, so shape is now (trajectory, time X, Y)
-        )
+        t0.attrs["field_names"] = ["temperature", "pressure"]
+        # m = t0.create_dataset(
+        #     "gas-interface-sdf", data=gas_interface_sdf, dtype=np.float32
+        # )
+        # m.attrs["dim_varying"] = np.array(
+        #     [True, True]
+        # )  # This field is defined over both spatial dims (ie, shape is ... X Y)
+        # m.attrs["sample_varying"] = (
+        #     True  # This field varies between trajectories, so shape is now (trajectory, ..., X, Y)
+        # )
+        # m.attrs["time_varying"] = (
+        #     True  # This field varies over time, so shape is now (trajectory, time X, Y)
+        # )
+
+        pressure_dset = t0.create_dataset("pressure", data=pressure, dtype=np.float32)
+        pressure_dset.attrs["dim_varying"] = np.array([True, True])
+        pressure_dset.attrs["sample_varying"] = True
+        pressure_dset.attrs["time_varying"] = True
 
         temp_dset = t0.create_dataset("temperature", data=temp, dtype=np.float32)
         temp_dset.attrs["dim_varying"] = np.array([True, True])
@@ -391,16 +397,19 @@ materials = [
     "FC72",
     # "R515B",
 ]
+from alive_progress import alive_it
+
 for material in materials:
     base_path = os.path.join(download_path, material)
     out_path = os.path.join(processed_path, "data", "train")
     files = glob.glob(base_path + "/*.hdf5")
     count = 0
-    for file in files:
+    for file in alive_it(files):
         hdf5_path = file
         json_path = file.replace(".hdf5", ".json")
         translate_bubble(hdf5_path, json_path, material, out_path)
-        print(os.path.exists(hdf5_path), os.path.exists(json_path))
+        assert os.path.exists(hdf5_path), f"HDF5 file {hdf5_path} does not exist"
+        assert os.path.exists(json_path), f"JSON file {json_path} does not exist"
 
 
 # The files should now be transformed! The problem now is we don't have a valid and test set. In the experiments in their paper, only 2 sets were used, so we'll repeat this pattern here. If you're doing a lot of HP tuning on validation, you'll generally want to avoid this pattern, but we're going to use it here to match the original settings.

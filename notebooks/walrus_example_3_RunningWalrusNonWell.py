@@ -105,7 +105,7 @@ synthetic_trajectory_example = {
     "metadata": WellMetadata(
         dataset_name="synthetic_dataset",
         n_spatial_dims=3,
-        field_names={0: ['pressure', "blubber"], 1: ['velocity_x', 'velocity_y', 'velocity_z'], 2: []},
+        field_names={0: ['density', "blubber"], 1: ['velocity_x', 'velocity_y', 'velocity_z'], 2: []},
         spatial_resolution=(128, 128, 1),
         scalar_names=[], 
         constant_field_names={0: [], 1: [], 2: []},
