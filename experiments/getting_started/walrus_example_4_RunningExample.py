@@ -100,7 +100,7 @@ import numpy as np
 
 rho, u, v, p, Gamma = init_sod(H, W)
 
-stacked = np.stack([rho, p, np.random.randn(*u.shape), u, v, np.zeros(u.shape)]).transpose(1,2,0)[np.newaxis, np.newaxis, :, :, np.newaxis, :] # B, T, H, W, 1, D
+stacked = np.stack([rho, p, np.random.randn(*u.shape), u, v, np.zeros(u.shape)]).transpose(1,2,0)[np.newaxis, np.newaxis, :, :, np.newaxis, :] # B, T, H, W, D, C
 synthetic_trajectory_example = {
     "input_fields": torch.from_numpy(np.repeat(stacked, T_in, axis=1)).float().to(device),
     "output_fields": torch.from_numpy(np.repeat(stacked, T_out, axis=1)).float().to(device),
