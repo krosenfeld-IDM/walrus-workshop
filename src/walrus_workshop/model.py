@@ -1,5 +1,11 @@
 """
-This file contains the SAE model used to train the model.
+Sparse Autoencoder (SAE) model for training on GraphCast layer activations.
+
+This module implements a Top-K Sparse Autoencoder with AuxK loss following the
+OpenAI recipe. It includes:
+- A PyTorch IterableDataset for loading activation data from .npy files
+- The SAE model with dead neuron tracking and gradient projection
+- Utilities for converting PyTorch models to JAX format
 
 Source: https://github.com/theodoremacmillan/graphcast-interpretability/blob/main/src/graphcast_interpretability/model.py
 """
@@ -8,23 +14,9 @@ import glob
 import math
 import numpy as np
 import torch
-from torch.utils.data import IterableDataset, DataLoader
-from dataclasses import dataclass
-
-import os
-import glob
-import math
-import numpy as np
-import torch
-from torch.utils.data import IterableDataset, DataLoader
-
-# --- Core imports ---
-import os, glob, math, random, json
-from datetime import datetime
-import numpy as np
-import torch
 import torch.nn as nn
-from torch.utils.data import IterableDataset, DataLoader
+from torch.utils.data import IterableDataset
+from typing import Tuple, Optional, Union, List
 
 # --- Device setup ---
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -35,14 +27,61 @@ print(f"Using device: {device}")
 
 class NPYLayerActivationStream(IterableDataset):
     """
-    Iterable PyTorch dataset for per-layer GraphCast activations
-    saved as .npy arrays (one timestep per file).
+    Iterable PyTorch dataset for per-layer GraphCast activations saved as .npy arrays.
 
-    Automatically handles both [N, D] and [N, 1, D] shapes.
+    This dataset loads activation data from .npy files (one timestep per file) and
+    yields batches of node activations. It automatically handles both [N, D] and
+    [N, 1, D] input shapes by removing singleton dimensions. The dataset supports
+    multi-worker data loading with proper sharding and shuffling.
+
+    Attributes:
+        files: List of paths to .npy files matching the layer prefix.
+        d_in: Input dimension (number of features per node).
+        batch: Batch size for yielding data.
+        seed: Random seed for reproducibility.
+        steps_per_epoch: Number of batches to yield per epoch (None = all batches).
+        file_meta: List of metadata dictionaries containing file paths and node counts.
+        total_batches: Total number of batches available across all files.
+
+    Example:
+        >>> dataset = NPYLayerActivationStream(
+        ...     data_dirs=["/path/to/activations"],
+        ...     layer_prefix="layer0012_",
+        ...     d_in=512,
+        ...     batch_size=8192
+        ... )
+        >>> loader = DataLoader(dataset, num_workers=4)
+        >>> for batch in loader:
+        ...     # batch shape: [batch_size, d_in]
+        ...     pass
     """
 
-    def __init__(self, data_dirs, layer_prefix="layer0012_", d_in=512,
-                 batch_size=8192, steps_per_epoch=None, seed=0):
+    def __init__(
+        self,
+        data_dirs: Union[str, List[str]],
+        layer_prefix: str = "layer0012_",
+        d_in: int = 512,
+        batch_size: int = 8192,
+        steps_per_epoch: Optional[int] = None,
+        seed: int = 0
+    ):
+        """
+        Initialize the activation stream dataset.
+
+        Args:
+            data_dirs: Directory or list of directories containing .npy activation files.
+            layer_prefix: Prefix pattern to match layer files (e.g., "layer0012_").
+                Files matching "{layer_prefix}*.npy" will be loaded.
+            d_in: Expected input dimension (number of features per node).
+            batch_size: Number of nodes to include in each batch.
+            steps_per_epoch: Number of batches to yield per epoch. If None, yields
+                all available batches based on total nodes and batch_size.
+            seed: Random seed for shuffling and reproducibility.
+
+        Raises:
+            FileNotFoundError: If no .npy files are found matching the layer prefix.
+            AssertionError: If any file has an unexpected shape.
+        """
         super().__init__()
 
         if isinstance(data_dirs, str):
@@ -82,6 +121,18 @@ class NPYLayerActivationStream(IterableDataset):
             self.steps_per_epoch = self.total_batches
 
     def __iter__(self):
+        """
+        Iterate over batches of activation data.
+
+        This method handles multi-worker data loading by sharding files across workers
+        and shuffling within each worker's shard. Each file is loaded, nodes are
+        randomly permuted, and then batched.
+
+        Yields:
+            torch.Tensor: Batch of activations with shape [batch_size, d_in].
+                The actual batch size may be smaller than self.batch for the last
+                batch in a file or epoch.
+        """
         worker = torch.utils.data.get_worker_info()
         nw = worker.num_workers if worker else 1
         wid = worker.id if worker else 0
@@ -113,8 +164,31 @@ class NPYLayerActivationStream(IterableDataset):
                 xb = torch.from_numpy(X[sel, :])
                 yield xb
                 batches_yielded += 1
-def topk(x, k: int):
-    """Keep top-k per row, zero out the rest."""
+
+
+def topk(x: torch.Tensor, k: int) -> torch.Tensor:
+    """
+    Keep top-k values per row, zero out the rest.
+
+    This function performs a top-k sparsification operation on a tensor, keeping
+    only the k largest values in each row and setting all other values to zero.
+    This is used in the SAE to enforce sparsity in the latent code.
+
+    Args:
+        x: Input tensor of shape [batch_size, num_features].
+        k: Number of top values to keep per row. If k >= num_features, returns
+            the original tensor unchanged.
+
+    Returns:
+        torch.Tensor: Tensor of the same shape as x with only top-k values per
+            row retained, all others set to zero.
+
+    Example:
+        >>> x = torch.tensor([[1.0, 5.0, 3.0, 2.0], [4.0, 1.0, 6.0, 3.0]])
+        >>> topk(x, k=2)
+        tensor([[0., 5., 3., 0.],
+                [0., 0., 6., 3.]])
+    """
     if k >= x.shape[1]:
         return x
     vals, idx = torch.topk(x, k, dim=1)
@@ -124,9 +198,61 @@ def topk(x, k: int):
 
 
 class SAE(nn.Module):
-    """Top-K Sparse Autoencoder with AuxK loss (OpenAI recipe)."""
-    def __init__(self, d_in, latent, k_active, k_aux,
-                 unit_norm_decoder=True, dead_window=3_000_000):
+    """
+    Top-K Sparse Autoencoder with AuxK loss following the OpenAI recipe.
+
+    This SAE implements a sparse autoencoder that:
+    - Encodes inputs into a sparse latent representation (top-k activations)
+    - Decodes back to the input space
+    - Tracks and handles dead neurons (neurons that never activate)
+    - Uses an auxiliary reconstruction loss for dead neurons to encourage their use
+
+    The model normalizes inputs per-sample (zero-mean, unit-norm) and uses a shared
+    pre/post bias term. The decoder weights can be optionally kept at unit norm.
+
+    Attributes:
+        enc: Encoder linear layer (no bias).
+        dec: Decoder linear layer (no bias).
+        b_pre: Shared pre/post bias parameter.
+        k: Number of active (top-k) features to keep in the latent code.
+        k_aux: Number of top-k features to use in auxiliary reconstruction for dead neurons.
+        unit_norm_decoder: Whether to normalize decoder columns to unit norm.
+        dead_window: Number of consecutive inactive batches before a neuron is marked dead.
+        miss_counts: Buffer tracking consecutive inactive batches per latent dimension.
+        dead_mask: Boolean mask indicating which latent dimensions are dead.
+
+    Example:
+        >>> model = SAE(d_in=512, latent=8192, k_active=32, k_aux=8)
+        >>> x = torch.randn(128, 512)
+        >>> recon, code, aux_recon = model(x)
+        >>> # recon: [128, 512] - main reconstruction
+        >>> # code: [128, 8192] - sparse latent code (top-k only)
+        >>> # aux_recon: [128, 512] - auxiliary reconstruction from dead neurons
+    """
+    def __init__(
+        self,
+        d_in: int,
+        latent: int,
+        k_active: int,
+        k_aux: int,
+        unit_norm_decoder: bool = True,
+        dead_window: int = 3_000_000
+    ):
+        """
+        Initialize the Sparse Autoencoder.
+
+        Args:
+            d_in: Input dimension (number of features per sample).
+            latent: Latent dimension (number of dictionary features).
+            k_active: Number of top-k features to keep active in the main code.
+            k_aux: Number of top-k features to use in auxiliary reconstruction
+                for dead neurons (helps revive them).
+            unit_norm_decoder: If True, decoder columns are normalized to unit norm
+                during forward pass. This is the recommended setting.
+            dead_window: Number of consecutive batches a neuron must be inactive
+                before being marked as dead. Dead neurons are excluded from main
+                reconstruction but can participate in auxiliary reconstruction.
+        """
         super().__init__()
         # --- Core layers (no internal bias terms) ---
         self.enc = nn.Linear(d_in, latent, bias=False)
@@ -158,12 +284,39 @@ class SAE(nn.Module):
             self.b_pre.zero_()
 
     def _renorm_decoder_columns_(self):
-        """Ensure each decoder column has unit norm."""
+        """
+        Renormalize decoder columns to unit L2 norm (in-place).
+
+        This method ensures each column of the decoder weight matrix has unit norm,
+        which is important for maintaining the dictionary structure. This is typically
+        called after gradient updates if unit_norm_decoder is enabled.
+        """
         W = self.dec.weight.data
         norms = W.norm(dim=0, keepdim=True).clamp_min(self.eps)
         W.div_(norms)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Forward pass through the sparse autoencoder.
+
+        The forward pass:
+        1. Normalizes inputs per-sample (zero-mean, unit-norm)
+        2. Encodes to sparse latent code (top-k activations)
+        3. Decodes to reconstruction
+        4. Computes auxiliary reconstruction from dead neurons
+
+        Args:
+            x: Input tensor of shape [batch_size, d_in].
+
+        Returns:
+            Tuple containing:
+                - recon: Main reconstruction tensor of shape [batch_size, d_in].
+                - code: Sparse latent code tensor of shape [batch_size, latent]
+                    with only top-k values per sample non-zero.
+                - aux_recon: Auxiliary reconstruction tensor of shape [batch_size, d_in]
+                    computed from dead neurons only. Used for auxiliary loss to
+                    encourage dead neuron revival.
+        """
         # ---- Normalize inputs (zero-mean, unit-norm per sample) ----
         x = x - x.mean(dim=1, keepdim=True)
         x = x / x.norm(dim=1, keepdim=True).clamp_min(1e-6)
@@ -199,8 +352,20 @@ class SAE(nn.Module):
         return recon, code, aux_recon
 
     @torch.no_grad()
-    def update_dead_mask(self, code, batch_size: int):
-        """Update miss_counts and dead_mask each batch."""
+    def update_dead_mask(self, code: torch.Tensor, batch_size: int) -> None:
+        """
+        Update dead neuron tracking based on current batch activations.
+
+        This method should be called after each forward pass during training to
+        track which latent dimensions are inactive. Neurons that remain inactive
+        for `dead_window` consecutive batches are marked as dead and excluded from
+        the main reconstruction (but can still participate in auxiliary reconstruction).
+
+        Args:
+            code: Sparse latent code from forward pass, shape [batch_size, latent].
+            batch_size: Number of samples in the current batch (used for counting
+                inactive batches).
+        """
         active = (code > 0).any(dim=0).cpu()
         self.miss_counts[active] = 0
         self.miss_counts[~active] += batch_size
@@ -208,8 +373,20 @@ class SAE(nn.Module):
 
 
 @torch.no_grad()
-def _project_decoder_grads_orthogonal(model):
-    """Project decoder gradients so they don't change column norms."""
+def _project_decoder_grads_orthogonal(model: SAE) -> None:
+    """
+    Project decoder gradients to be orthogonal to decoder columns (in-place).
+
+    This function modifies the decoder gradients so that gradient updates don't
+    change the column norms. This is useful when maintaining unit-norm decoder
+    columns, as it ensures the gradient step preserves the normalization constraint.
+
+    The projection removes the component of the gradient parallel to each column,
+    leaving only the orthogonal component.
+
+    Args:
+        model: SAE model whose decoder gradients will be modified.
+    """
     W = model.dec.weight
     G = model.dec.weight.grad
     if G is None:
@@ -220,26 +397,79 @@ def _project_decoder_grads_orthogonal(model):
 
 
 @torch.no_grad()
-def _renorm_decoder_columns_(model):
-    """Ensure each decoder column has unit L2 norm."""
+def _renorm_decoder_columns_(model: SAE) -> None:
+    """
+    Renormalize decoder columns to unit L2 norm (in-place).
+
+    This function ensures each column of the decoder weight matrix has unit norm.
+    It's typically called after gradient updates when maintaining unit-norm decoder
+    columns, either as an alternative to or in combination with gradient projection.
+
+    Args:
+        model: SAE model whose decoder weights will be renormalized.
+    """
     W = model.dec.weight.data
     norms = W.norm(dim=0, keepdim=True).clamp_min(1e-8)
     W.div_(norms)
 
-# for use with JAX model
+# ---------- Convert PyTorch SAE to JAX format ----------
 
-# ---------- Convert PyTorch SAE to SAEStaticParams ----------
-import torch
-import numpy as np
-from typing import Tuple
-import sys, os
 
-def load_sae_params_from_torch(ckpt_path: str, unit_norm_decoder: bool, k_active: int):
-    import torch, jax.numpy as jnp
+def load_sae_params_from_torch(
+    ckpt_path: str,
+    unit_norm_decoder: bool,
+    k_active: int
+):
+    """
+    Load PyTorch SAE checkpoint and convert to JAX-compatible format.
+
+    This function loads a PyTorch SAE model checkpoint and converts it to a
+    JAX-compatible dataclass format. The weights are transposed to match JAX
+    conventions (JAX uses [out_features, in_features] while PyTorch uses
+    [in_features, out_features] for Linear layers).
+
+    Args:
+        ckpt_path: Path to the PyTorch checkpoint file (.pt or .pth).
+        unit_norm_decoder: Whether the decoder columns were normalized to unit
+            norm in the original model.
+        k_active: Number of top-k active features used in the original model.
+
+    Returns:
+        SAEStaticParams: Dataclass containing:
+            - enc_w: Encoder weights as JAX array, shape [d_in, latent].
+            - dec_w: Decoder weights as JAX array, shape [latent, d_in].
+            - b_pre: Shared pre/post bias as JAX array, shape [d_in].
+            - k_active: Number of top-k active features.
+            - unit_norm_decoder: Whether decoder columns are unit-normalized.
+
+    Raises:
+        FileNotFoundError: If the checkpoint file doesn't exist.
+        KeyError: If required keys are missing from the checkpoint state dict.
+
+    Example:
+        >>> params = load_sae_params_from_torch(
+        ...     ckpt_path="model.pt",
+        ...     unit_norm_decoder=True,
+        ...     k_active=32
+        ... )
+        >>> # Use params.enc_w, params.dec_w, etc. in JAX code
+    """
+    import torch
+    import jax.numpy as jnp
     from dataclasses import dataclass
 
     @dataclass
     class SAEStaticParams:
+        """
+        Static parameters for SAE model in JAX format.
+
+        Attributes:
+            enc_w: Encoder weight matrix, shape [d_in, latent].
+            dec_w: Decoder weight matrix, shape [latent, d_in].
+            b_pre: Shared pre/post bias vector, shape [d_in].
+            k_active: Number of top-k active features to keep.
+            unit_norm_decoder: Whether decoder columns are unit-normalized.
+        """
         enc_w: jnp.ndarray
         dec_w: jnp.ndarray
         b_pre: jnp.ndarray
