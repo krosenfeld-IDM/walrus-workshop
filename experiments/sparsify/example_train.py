@@ -19,7 +19,7 @@ gpt = AutoModelForCausalLM.from_pretrained(
     torch_dtype=torch.bfloat16,
 )
 
-cfg = TrainConfig(SaeConfig(), batch_size=16)
+cfg = TrainConfig(SaeConfig(), batch_size=16, hookpoints=["layers.20"] ) # Model has 30 layers, we train on layer 2/3 of the way through.
 trainer = Trainer(cfg, tokenized, gpt)
 
 trainer.fit()
