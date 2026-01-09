@@ -12,5 +12,6 @@ wheels/
 # Data
 *.hdf5
 *.json
+*.pt
 
 _output/
