@@ -6,6 +6,7 @@ from torch._tensor import Tensor
 
 from typing import Any
 import os
+import logging
 from walrus_workshop import paths
 from walrus_workshop.walrus import get_trajectory, load_model
 import torch
@@ -20,6 +21,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Change directory
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 # Manage the activations
 am = ActivationManager(
@@ -71,7 +75,6 @@ formatter = ChannelsFirstWithTimeFormatter()
 revin = instantiate(config.trainer.revin)()  # This is a functools partial by default
 
 num_trajectories = 28
-debug = False
 for trajectory_index in alive_it(range(num_trajectories)):
     print(f"Getting trajectory {trajectory_index}")
     batch, metadata = get_trajectory(
@@ -98,8 +101,7 @@ for trajectory_index in alive_it(range(num_trajectories)):
         mask = None
 
     for t_start in range(0, batch["output_fields"].shape[1] - 6, 6):
-        if debug:
-            print(f"Processing time step {t_start} / {batch['output_fields'].shape[1] - 6}")
+        logger.debug(f"Processing time step {t_start} / {batch['output_fields'].shape[1] - 6}")
         with torch.no_grad():
             # inputs, y_ref = formatter.process_input(
             #     batch,
@@ -122,30 +124,21 @@ for trajectory_index in alive_it(range(num_trajectories)):
                 normalized_inputs[0], normalization_stats
             )
             # Inputs T B C H [W D], y_ref B T H [W D] C
-            if debug:
-                print(f"Normalized inputs shape: {normalized_inputs[0].shape}")
-                print(
-                    f"Normalized inputs[0] shape: {normalized_inputs[0].shape}"
-                )  # data
-                print(
-                    f"Normalized inputs[1] shape: {normalized_inputs[1].shape}"
-                )  # field indices
-                print(
-                    f"Normalized inputs[2] shape: {normalized_inputs[2].shape}"
-                )  # boundary conditions
+            logger.debug(f"Normalized inputs shape: {normalized_inputs[0].shape}")
+            logger.debug(f"Normalized inputs[0] shape: {normalized_inputs[0].shape}")  # data
+            logger.debug(f"Normalized inputs[1] shape: {normalized_inputs[1].shape}")  # field indices
+            logger.debug(f"Normalized inputs[2] shape: {normalized_inputs[2].shape}")  # boundary conditions
             y_pred = model(
                 normalized_inputs[0],
                 normalized_inputs[1],
                 normalized_inputs[2].tolist(),
                 metadata=metadata,
             )
-            if debug:
-                print(f"y_pred shape: {y_pred.shape}")
+            logger.debug(f"y_pred shape: {y_pred.shape}")
 
         # Access the captured activations
         act = activations[layer_name]
-        if debug:
-            print(f"Captured activations shape: {act.shape}")
+        logger.debug(f"Captured activations shape: {act.shape}")
 
         # Current shape: [T, 32, 32, 1, 2816]
         # Target shape:  [Total_Tokens, Hidden_Dim]
@@ -159,8 +152,7 @@ for trajectory_index in alive_it(range(num_trajectories)):
         sae_input = act.reshape(-1, 2816)
 
         # Save the activations
-        if debug:
-            print(f"Saving activations for {layer_name}")
+        logger.debug(f"Saving activations for {layer_name}")
         am.save(
             f"traj{trajectory_index}_tstart{t_start}",
             sae_input.cpu().numpy(),

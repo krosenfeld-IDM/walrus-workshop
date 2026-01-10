@@ -11,7 +11,7 @@ from walrus.trainer.normalization_strat import (
     normalize_target,
 )
 from walrus_workshop import paths
-# Change teh working directory
+# Change the working directory
 import os
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
