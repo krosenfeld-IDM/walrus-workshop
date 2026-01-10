@@ -24,15 +24,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # Set up logger
 logger = logging.getLogger(__name__)
-# logger.setLevel(logging.DEBUG) # DEBUG
-
-# Manage the activations
-am = ActivationManager(
-    enabled=True, save_dir=os.path.abspath("./activations"), mode="both"
-)
-print(f"Activation manager save directory: {am.save_dir}")
-activations = {}
-
+logger.setLevel(logging.DEBUG) # DEBUG
 
 # Define the hook function
 def get_activation(name, activations):
@@ -66,6 +58,13 @@ model.eval()
 # Print model structure to find the name: print(model)
 layer_name = "blocks.20.space_mixing.activation"
 target_layer = dict(model.named_modules())[layer_name]
+
+# Manage the activations
+am = ActivationManager(
+    enabled=True, save_dir=os.path.abspath(f"./activations/{layer_name}"), mode="both"
+)
+logger.log(f"Activation manager save directory: {am.save_dir}")
+activations = {}
 
 # Register the hook
 print(f"Registering hook for {layer_name}")
@@ -145,19 +144,19 @@ for trajectory_index in alive_it(range(num_trajectories)):
         # Target shape:  [Total_Tokens, Hidden_Dim]
 
         # 1. Squeeze the singleton dimension (the '1')
-        # Shape becomes: [10, 32, 32, 2816]
+        # Shape becomes: [T, 32, 32, 2816]
         act = act.squeeze(3)
 
         # 2. Flatten the batch and spatial dimensions
-        # Shape becomes: [10 * 32 * 32, 2816] -> [10240, 2816]
+        # Shape becomes: [T * 32 * 32, 2816] -> [10240, 2816]
         sae_input = act.reshape(-1, 2816)
 
         # Save the activations
         logger.debug(f"Saving activations for {layer_name}")
         am.save(
-            f"traj{trajectory_index}_tstart{t_start}",
-            sae_input.cpu().numpy(),
-            step_idx=0,
+            f"layer{layer_name}_traj{trajectory_index}_tstart{t_start}",
+            sae_input.cpu(),
+            step_idx=t_start,
             node_set=list(activations.keys())[0],
         )
 

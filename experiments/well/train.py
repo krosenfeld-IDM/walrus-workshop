@@ -150,7 +150,7 @@ def save_sae(save_path, cfg=None, model=None):
 
 def load_sae(save_path):
     logger.info(f"Loading model from {save_path}")
-    
+
     # 1. Load
     checkpoint = torch.load(save_path)
     config = checkpoint["config"]
@@ -163,7 +163,7 @@ def load_sae(save_path):
 
     return loaded_model, config
 
-def demo():
+def train_demo():
 
     # Hyperparameters
     cfg = {
@@ -200,15 +200,27 @@ def demo():
         epochs=3, 
         device=device
     )
-    return trained_model, cfg    
+    return trained_model, cfg  
+
+def train_walrus():  
+    layer_name = "blocks.20.space_mixing.activation"
+    save_dir = os.path.abspath(f"./activations/{layer_name}")
+    act_files = glob.glob(os.path.join(save_dir, "*.npy"))
+    act_shape = np.load(act_files[0]).shape
+    cfg = {
+        "d_in": act_shape[1],
+        "latent": 4096, # np.prod(act_shape),
+        "k": 32,
+        "k_aux": 512,
+    }
 
 if __name__ == "__main__":
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-    trained_model, cfg = demo()
+    trained_model, cfg = train_demo()
     save_sae(save_path="sae_checkpoint.pt", cfg=cfg, model=trained_model)
 
-    new_model, new_cfg = load_sae(save_path="sae_checkpoint.pt")
+    # new_model, new_cfg = load_sae(save_path="sae_checkpoint.pt")
 
 
 # os.chdir(os.path.dirname(os.path.abspath(__file__)))
