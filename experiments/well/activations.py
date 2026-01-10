@@ -56,14 +56,14 @@ model.eval()
 
 # Identify the layer you want to hook.
 # Print model structure to find the name: print(model)
-layer_name = "blocks.20.space_mixing.activation"
+layer_name = "blocks.30.space_mixing.activation"
 target_layer = dict(model.named_modules())[layer_name]
 
 # Manage the activations
 am = ActivationManager(
     enabled=True, save_dir=os.path.abspath(f"./activations/{layer_name}"), mode="both"
 )
-logger.log(f"Activation manager save directory: {am.save_dir}")
+logger.info(f"Activation manager save directory: {am.save_dir}")
 activations = {}
 
 # Register the hook
