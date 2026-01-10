@@ -3,7 +3,6 @@ Train TopK SAE on activations
 """
 import os
 import glob
-import inspect
 import logging
 import sys
 from walrus_workshop.model import SAE
@@ -13,6 +12,7 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 from torch.utils.data import Dataset
 from alive_progress import alive_it
+import wandb
 
 # Setup logger with handler to output to terminal
 logger = logging.getLogger(__name__)
@@ -52,8 +52,19 @@ def train_sae(
     batch_size=4096, 
     lr=3e-4, 
     epochs=10, 
-    device="cuda"
+    device="cuda",
+    wandb_cfg=None
 ):
+    # Initialize wandb if requested
+    use_wandb = wandb_cfg is not None and wandb_cfg.get("use_wandb", False)
+    if use_wandb:
+        wandb.init(
+            project=wandb_cfg.get("wandb_project", "walrus-workshop"),
+            name=wandb_cfg.get("wandb_run_name", None),
+            config=wandb_cfg
+        )
+        logger.info("Wandb logging enabled")
+    
     # 1. Setup Data
     dataset = NumpyListDataset(numpy_data_list)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -124,14 +135,46 @@ def train_sae(
             total_mse += mse_loss.item()
             total_aux += aux_loss.item()
             
+            # Wandb logging (every 100 batches to avoid too much logging)
+            if use_wandb and batch_idx % 100 == 0:
+                current_lr = scheduler.get_last_lr()[0]
+                wandb.log({
+                    "train/loss": loss.item(),
+                    "train/mse_loss": mse_loss.item(),
+                    "train/aux_loss": aux_loss.item(),
+                    "train/dead_neurons": sae_model.dead_mask.sum().item(),
+                    "train/learning_rate": current_lr,
+                    "epoch": epoch,
+                    "batch": batch_idx,
+                    "global_step": epoch * len(dataloader) + batch_idx
+                })
+            
             if batch_idx % 100 == 0:
                 logger.info(f"Epoch {epoch+1} | Batch {batch_idx} | "
                       f"MSE: {mse_loss.item():.4f} | Aux: {aux_loss.item():.4f} | "
                       f"Dead: {sae_model.dead_mask.sum().item()}")
 
         avg_loss = total_loss / len(dataloader)
+        avg_mse = total_mse / len(dataloader)
+        avg_aux = total_aux / len(dataloader)
+        
+        # Log epoch-level metrics to wandb
+        if use_wandb:
+            wandb.log({
+                "epoch/avg_loss": avg_loss,
+                "epoch/avg_mse_loss": avg_mse,
+                "epoch/avg_aux_loss": avg_aux,
+                "epoch/dead_neurons": sae_model.dead_mask.sum().item(),
+                "epoch/learning_rate": scheduler.get_last_lr()[0],
+                "epoch": epoch + 1
+            })
+        
         logger.info(f"=== Epoch {epoch+1} Finished. Avg Loss: {avg_loss:.5f} ===")
 
+    # Finish wandb run
+    if use_wandb:
+        wandb.finish()
+    
     return sae_model
 
 def save_sae(save_path, cfg=None, model=None):
@@ -173,6 +216,11 @@ def train_demo():
         "k_aux": 512,
         "dead_window": 50_000,
     }
+    wandb_cfg = {
+        "use_wandb": True,  # Set to True to enable wandb logging
+        "wandb_project": "walrus-workshop-demo",
+        "wandb_run_name": None,  # None will auto-generate a name
+    }
     
     # 1. Generate Dummy Data (N numpy arrays)
     # Simulating 5 arrays, each with 10k samples of dim 768
@@ -198,15 +246,28 @@ def train_demo():
         batch_size=1024, 
         lr=3e-4, 
         epochs=3, 
-        device=device
+        device=device,
+        wandb_cfg=wandb_cfg
     )
     return trained_model, cfg  
 
-def train_walrus():  
+def train_walrus(num_arrays: int | None = 10):  
     layer_name = "blocks.20.space_mixing.activation"
     save_dir = os.path.abspath(f"./activations/{layer_name}")
     act_files = glob.glob(os.path.join(save_dir, "*.npy"))
     act_shape = np.load(act_files[0]).shape
+
+    if num_arrays is not None:
+        act_files = list(np.random.choice(act_files, size=num_arrays, replace=False))
+    else:
+        act_files = act_files
+
+    numpy_arrays = []
+    logger.info(f"Loading {len(act_files)} activation files")
+    for file in alive_it(act_files):
+        act = np.load(file)
+        numpy_arrays.append(act)
+
     cfg = {
         "d_in": act_shape[1],
         "latent": 4096, # np.prod(act_shape),
@@ -214,11 +275,39 @@ def train_walrus():
         "k_aux": 512,
     }
 
+    wandb_cfg = {
+        "use_wandb": True,  # Set to True to enable wandb logging
+        "wandb_project": f"walrus-workshop-{layer_name}",
+        "wandb_run_name": None,  # None will auto-generate a name
+    }
+        
+    # 2. Initialize Model
+    model = SAE(
+        d_in=cfg.get("d_in", 768),
+        latent=cfg.get("latent", 768*4),
+        k_active=cfg.get("k_active", 32),
+        k_aux=cfg.get("k_aux", 512),
+        dead_window=cfg.get("dead_window", 50_000), # Set smaller for this demo to see updates
+    )
+
+    # 3. Train
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    trained_model = train_sae(
+        model, 
+        numpy_arrays, 
+        batch_size=1024, 
+        lr=3e-4, 
+        epochs=5, 
+        device=device,
+        wandb_cfg=wandb_cfg
+    )
+    return trained_model, cfg      
+
 if __name__ == "__main__":
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-    trained_model, cfg = train_demo()
-    save_sae(save_path="sae_checkpoint.pt", cfg=cfg, model=trained_model)
+    trained_model, cfg = train_walrus(num_arrays=50)
+    save_sae(save_path="./checkpoints/sae_checkpoint.pt", cfg=cfg, model=trained_model)
 
     # new_model, new_cfg = load_sae(save_path="sae_checkpoint.pt")
 
