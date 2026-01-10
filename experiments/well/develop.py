@@ -24,6 +24,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # Set up logger
 logger = logging.getLogger(__name__)
+# logger.setLevel(logging.DEBUG) # DEBUG
 
 # Manage the activations
 am = ActivationManager(
