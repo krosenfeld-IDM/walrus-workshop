@@ -498,3 +498,18 @@ def load_sae_params_from_torch(
         k_active=k_active,
         unit_norm_decoder=unit_norm_decoder,
     )
+
+
+def load_sae(save_path, load_weights=True):
+    # 1. Load
+    checkpoint = torch.load(save_path)
+    config = checkpoint["config"]
+
+    # 2. Instantiate (The Pythonic Way)
+    model = SAE(**config)
+
+    if load_weights:
+        # 3. Load weights
+        model.load_state_dict(checkpoint["model_state_dict"])
+
+    return model, config

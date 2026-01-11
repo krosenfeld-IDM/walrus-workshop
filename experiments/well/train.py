@@ -222,22 +222,6 @@ def save_sae(save_path, cfg=None, model=None):
     logger.info(f"Model saved to {save_path}")
 
 
-def load_sae(save_path):
-    logger.info(f"Loading model from {save_path}")
-
-    # 1. Load
-    checkpoint = torch.load(save_path)
-    config = checkpoint["config"]
-
-    # 2. Instantiate (The Pythonic Way)
-    loaded_model = SAE(**config)
-
-    # 3. Load weights
-    loaded_model.load_state_dict(checkpoint["model_state_dict"])
-
-    return loaded_model, config
-
-
 def train_demo():
     # Hyperparameters
     cfg = {
