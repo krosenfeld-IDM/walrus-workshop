@@ -13,5 +13,9 @@ wheels/
 *.hdf5
 *.json
 *.pt
+*.npy
+*.log
+*.wandb
 
 _output/
+wandb/

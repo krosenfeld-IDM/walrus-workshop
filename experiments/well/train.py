@@ -7,6 +7,7 @@ import glob
 import logging
 import sys
 from walrus_workshop.model import SAE
+from walrus_workshop.utils import split_test_train
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -289,13 +290,16 @@ def train_demo():
 
 def train_walrus(layer_name: str, num_arrays: int | None = 10):
     save_dir = os.path.abspath(f"./activations/{layer_name}")
-    act_files = glob.glob(os.path.join(save_dir, "*.npy"))
+    act_files = sorted(glob.glob(os.path.join(save_dir, "*.npy")))
     act_shape = np.load(act_files[0]).shape
 
+    # Split into train/test using reproducible split
+    train_files, test_files = split_test_train(act_files, random_state=42, test_size=0.2)
+    
+    # Use test split and limit to num_arrays if specified
+    act_files = train_files
     if num_arrays is not None:
-        act_files = list(np.random.choice(act_files, size=num_arrays, replace=False))
-    else:
-        act_files = act_files
+        act_files = act_files[:num_arrays]
 
     numpy_arrays = []
     logger.info(f"Loading {len(act_files)} activation files")
@@ -306,14 +310,14 @@ def train_walrus(layer_name: str, num_arrays: int | None = 10):
     cfg = {
         "d_in": act_shape[1],
         "latent": act_shape[1] * 32,  # d_in x expansion factor
-        "k": 32,
+        "k_active": 32,
         "k_aux": 512,
     }
 
     wandb_cfg = {
         "use_wandb": True,  # Set to True to enable wandb logging
         "wandb_project": f"walrus-workshop-{layer_name}",
-        "wandb_run_name": f"num_arrays={num_arrays}, k={cfg.get('k', 32)}, k_aux={cfg.get('k_aux', 512)}, latent={cfg.get('latent', 768 * 4)}",  # None will auto-generate a name
+        "wandb_run_name": f"num_arrays={num_arrays}, k_active={cfg.get('k_active', 32)}, k_aux={cfg.get('k_aux', 512)}, latent={cfg.get('latent', 768 * 4)}",  # None will auto-generate a name
     }
 
     # 2. Initialize Model
