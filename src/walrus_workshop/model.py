@@ -17,6 +17,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import IterableDataset
 from typing import Tuple, Optional, Union, List
+from walrus_workshop.utils import filter_kwargs
 
 # --- Device setup ---
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -504,6 +505,8 @@ def load_sae(save_path, load_weights=True):
     # 1. Load
     checkpoint = torch.load(save_path)
     config = checkpoint["config"]
+
+    config = filter_kwargs(config, SAE)
 
     # 2. Instantiate (The Pythonic Way)
     model = SAE(**config)

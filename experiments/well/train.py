@@ -354,6 +354,8 @@ def train_walrus(layer_name: str, num_arrays: int | None = 10, num_workers: int 
     # Limit to num_arrays if specified
     if num_arrays is not None:
         train_files = train_files[:num_arrays]
+    else:
+        num_arrays = len(train_files)
 
     batch_size = 1024
 
@@ -408,8 +410,8 @@ if __name__ == "__main__":
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     num_arrays = 150
 
-    layer_name = "blocks.30.space_mixing.activation"
-    trained_model, cfg = train_walrus(layer_name, num_arrays=100)
+    layer_name = "blocks.20.space_mixing.activation"
+    trained_model, cfg = train_walrus(layer_name, num_arrays=None)
     save_sae(
         save_path=f"./checkpoints/sae_checkpoint_{layer_name}_num{num_arrays}.pt",
         cfg=cfg,
