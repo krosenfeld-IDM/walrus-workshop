@@ -10,8 +10,20 @@ import os
 import polars as pl
 from walrus_workshop.metrics import compute_enstrophy
 from alive_progress import alive_it
+import logging
+from itertools import islice
 
-def main(dataset_id: [str, int] = 0, trajectory_index: int = 0, video: bool = False, enstrophy: bool = True):
+# Set up logger
+logger = logging.getLogger(__name__)
+# logger.setLevel(logging.DEBUG)
+
+
+def main(
+    dataset_id: [str, int] = 0,
+    trajectory_index: int = 0,
+    video: bool = False,
+    enstrophy: bool = True,
+):
     # checkpoint_config_path = os.path.join(".", "configs", "bubbleml_poolboil_subcool.yaml")
     checkpoint = torch.load(
         paths.checkpoints / "walrus.pt", map_location="cpu", weights_only=True
@@ -36,11 +48,13 @@ def main(dataset_id: [str, int] = 0, trajectory_index: int = 0, video: bool = Fa
     total_input_fields = max(field_to_index_map.values()) + 1
 
     # Instantiate the model
+    logger.info(f"Instantiating model with {total_input_fields} input fields")
     model: torch.nn.Module = instantiate(
         config.model,
         n_states=total_input_fields,
     )
     # Load the checkpoint
+    logger.info(f"Loading checkpoint")
     model.load_state_dict(checkpoint)
 
     # Move to the device we want
@@ -60,17 +74,34 @@ def main(dataset_id: [str, int] = 0, trajectory_index: int = 0, video: bool = Fa
     else:
         dataset_index = dataset_id
     print(f"Using dataset {dataset_names[dataset_index]}")
-    dataset = data_module.rollout_val_datasets[dataset_index].sub_dsets[
-        trajectory_index
+    dataset = data_module.rollout_test_datasets[dataset_index].sub_dsets[
+        0
     ]
     metadata = dataset.metadata
 
     trajectory_example = next(
-        iter(data_module.rollout_val_dataloaders()[dataset_index])
+        islice(
+            data_module.rollout_test_dataloaders()[dataset_index],
+            trajectory_index,
+            trajectory_index + 1,
+        )
     )
 
-    trajectory_name = metadata.dataset_name+f'_{trajectory_index}'+'_'.join([k+f"{c.item()}" for k, c in zip(metadata.constant_scalar_names,trajectory_example['constant_scalars'][0])])
+    trajectory_name = (
+        metadata.dataset_name
+        + f"_{trajectory_index}_"
+        + "_".join(
+            [
+                k + f"{c.item():.2e}"
+                for k, c in zip(
+                    metadata.constant_scalar_names,
+                    trajectory_example["constant_scalars"][0],
+                )
+            ]
+        )
+    )
 
+    logger.info(f"Processing trajectory {trajectory_name}")
     with torch.no_grad():
         trajectory_example["padded_field_mask"] = trajectory_example[
             "padded_field_mask"
@@ -108,7 +139,8 @@ def main(dataset_id: [str, int] = 0, trajectory_index: int = 0, video: bool = Fa
         enstrophy_ref = []
         enstrophy_pred = []
 
-        for i in alive_it(range(y_ref.shape[1])):
+        logger.info(f"Computing enstrophy for trajectory {trajectory_name}")
+        for i in range(y_ref.shape[1]):
             enstrophy_ref.append(
                 compute_enstrophy(
                     y_ref[0, i, :, :, 0, 2].cpu().numpy(),
@@ -128,10 +160,9 @@ def main(dataset_id: [str, int] = 0, trajectory_index: int = 0, video: bool = Fa
         # Save the two lists to a csv file using polars
         pl.DataFrame(
             {"enstrophy_ref": enstrophy_ref, "enstrophy_pred": enstrophy_pred}
-        ).write_csv(
-            os.path.join(output_dir, f"{trajectory_name}.csv")
-        )
+        ).write_csv(os.path.join(output_dir, f"{trajectory_name}.csv"))
     if video:
+        logger.info(f"Making video")
         output_dir = "./figures/"
         os.makedirs(output_dir, exist_ok=True)
         make_video(
@@ -149,4 +180,5 @@ if __name__ == "__main__":
     import os
 
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    main(dataset_id="shear_flow", enstrophy=True, video=True, trajectory_index=0)
+    for trajectory_index in range(0,28):
+        main(dataset_id="shear_flow", enstrophy=True, video=True, trajectory_index=trajectory_index)
