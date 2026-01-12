@@ -19,6 +19,7 @@ dependencies = [
     "timm>=1.0.24",
     "plotly>=6.5.1",
     "kaleido>=1.2.0",
+    "polars>=1.37.0",
 ]
 
 [project.scripts]
