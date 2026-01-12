@@ -6,18 +6,22 @@ from walrus.data.well_to_multi_transformer import ChannelsFirstWithTimeFormatter
 from walrus_workshop.rollout import rollout_model
 from the_well.data.utils import flatten_field_names
 from the_well.benchmark.metrics import make_video
+import os
+import polars as pl
+from walrus_workshop.metrics import compute_enstrophy
+from alive_progress import alive_it
 
-def main(dataset_id: [str, int] = 0, trajectory_index: int = 0):
+def main(dataset_id: [str, int] = 0, trajectory_index: int = 0, video: bool = False, enstrophy: bool = True):
     # checkpoint_config_path = os.path.join(".", "configs", "bubbleml_poolboil_subcool.yaml")
-    checkpoint = torch.load(paths.checkpoints/"walrus.pt", map_location="cpu", weights_only=True)["app"][
-        "model"
-    ]    
-    config = OmegaConf.load(paths.configs/"well_config.yaml")
+    checkpoint = torch.load(
+        paths.checkpoints / "walrus.pt", map_location="cpu", weights_only=True
+    )["app"]["model"]
+    config = OmegaConf.load(paths.configs / "well_config.yaml")
 
     # The dataset objects precompute a number of dataset stats on init, so this may take a little while
     data_module = instantiate(
         config.data.module_parameters,
-        well_base_path=paths.data/"datasets",
+        well_base_path=paths.data / "datasets",
         world_size=1,
         rank=0,
         data_workers=1,
@@ -45,7 +49,9 @@ def main(dataset_id: [str, int] = 0, trajectory_index: int = 0):
     model.eval()
 
     formatter = ChannelsFirstWithTimeFormatter()
-    revin = instantiate(config.trainer.revin)()  # This is a functools partial by default
+    revin = instantiate(
+        config.trainer.revin
+    )()  # This is a functools partial by default
 
     # Grab the trajectory
     dataset_names = list(config.data.module_parameters.well_dataset_info.keys())
@@ -54,10 +60,16 @@ def main(dataset_id: [str, int] = 0, trajectory_index: int = 0):
     else:
         dataset_index = dataset_id
     print(f"Using dataset {dataset_names[dataset_index]}")
-    dataset = data_module.rollout_val_datasets[dataset_index].sub_dsets[trajectory_index]
+    dataset = data_module.rollout_val_datasets[dataset_index].sub_dsets[
+        trajectory_index
+    ]
     metadata = dataset.metadata
 
-    trajectory_example = next(iter(data_module.rollout_val_dataloaders()[dataset_index]))
+    trajectory_example = next(
+        iter(data_module.rollout_val_dataloaders()[dataset_index])
+    )
+
+    trajectory_name = metadata.dataset_name+f'_{trajectory_index}'+'_'.join([k+f"{c.item()}" for k, c in zip(metadata.constant_scalar_names,trajectory_example['constant_scalars'][0])])
 
     with torch.no_grad():
         trajectory_example["padded_field_mask"] = trajectory_example[
@@ -92,21 +104,49 @@ def main(dataset_id: [str, int] = 0, trajectory_index: int = 0):
             if trajectory_example["padded_field_mask"][i]
         ]
 
+    if enstrophy:
+        enstrophy_ref = []
+        enstrophy_pred = []
 
-    output_dir = "./figures/"
+        for i in alive_it(range(y_ref.shape[1])):
+            enstrophy_ref.append(
+                compute_enstrophy(
+                    y_ref[0, i, :, :, 0, 2].cpu().numpy(),
+                    y_ref[0, i, :, :, 0, 3].cpu().numpy(),
+                )[0]
+            )
+            enstrophy_pred.append(
+                compute_enstrophy(
+                    y_pred[0][i, :, :, 0, 2].cpu().numpy(),
+                    y_pred[0][i, :, :, 0, 3].cpu().numpy(),
+                )[0]
+            )
 
-    make_video(
-        y_pred[0],  # First sample only in batch
-        y_ref[0],  # First sample only in batch
-        metadata,
-        output_dir=output_dir,
-        epoch_number=f"rollout_{trajectory_index}_example",  # Misleading parameter name, but duck typing lets it be used for naming the output. Needs upstream fix.
-        field_name_overrides=used_field_names,  # Fields actually used
-        size_multiplier=1.0,  #
-    )
+        output_dir = os.path.join("metrics", "enstrophy")
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Save the two lists to a csv file using polars
+        pl.DataFrame(
+            {"enstrophy_ref": enstrophy_ref, "enstrophy_pred": enstrophy_pred}
+        ).write_csv(
+            os.path.join(output_dir, f"{trajectory_name}.csv")
+        )
+    if video:
+        output_dir = "./figures/"
+        os.makedirs(output_dir, exist_ok=True)
+        make_video(
+            y_pred[0],  # First sample only in batch
+            y_ref[0],  # First sample only in batch
+            metadata,
+            output_dir=output_dir,
+            epoch_number=trajectory_name,  # Misleading parameter name, but duck typing lets it be used for naming the output. Needs upstream fix.
+            field_name_overrides=used_field_names,  # Fields actually used
+            size_multiplier=1.0,  #
+        )
 
 
 if __name__ == "__main__":
     import os
+
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    main(dataset_id='shear_flow')
+    main(dataset_id="shear_flow", enstrophy=True, video=True, trajectory_index=0)

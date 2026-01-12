@@ -343,7 +343,7 @@ def train_demo():
     return trained_model, cfg
 
 
-def train_walrus(layer_name: str, num_arrays: int | None = 10, num_workers: int = 4):
+def train_walrus(layer_name: str, num_arrays: int | None = 10, num_workers: int = 4, save: bool = False):
     save_dir = os.path.abspath(f"./activations/{layer_name}")
     act_files = sorted(glob.glob(os.path.join(save_dir, "*.npy")))
     act_shape = np.load(act_files[0], mmap_mode="r").shape
@@ -403,17 +403,19 @@ def train_walrus(layer_name: str, num_arrays: int | None = 10, num_workers: int 
         wandb_cfg=wandb_cfg,
         sae_cfg=cfg,
     )
+
+    if save:
+        save_sae(
+            save_path=f"./checkpoints/sae_checkpoint_{layer_name}_num{num_arrays}.pt",
+            cfg=cfg,
+            model=trained_model,
+        )        
     return trained_model, cfg
 
 
 if __name__ == "__main__":
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    num_arrays = 150
 
-    layer_name = "blocks.20.space_mixing.activation"
-    trained_model, cfg = train_walrus(layer_name, num_arrays=None)
-    save_sae(
-        save_path=f"./checkpoints/sae_checkpoint_{layer_name}_num{num_arrays}.pt",
-        cfg=cfg,
-        model=trained_model,
-    )
+    for layer_number in [21, 30]:
+        layer_name = f"blocks.{layer_number}.space_mixing.activation"
+        trained_model, cfg = train_walrus(layer_name, num_arrays=None, save=True)
