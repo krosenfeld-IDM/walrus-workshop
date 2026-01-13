@@ -1,4 +1,4 @@
 [submodule "src/walrus"]
 	path = src/walrus
-	url = https://github.com/krosenfeld-IDM/walrus.git
+	url = git@github.com:krosenfeld-IDM/walrus.git
 	branch = walrus-workshop
