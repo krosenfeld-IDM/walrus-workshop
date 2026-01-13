@@ -31,7 +31,6 @@ def run_maes(layer_name: str, num_arrays: int, num_exemplars_per_feature: int, a
 
     # Split into train/test and use test data
     _, test_files = split_test_train(act_files)
-    # test_files = test_files[:10]
 
     # Load the trained SAE
     sae_model, config = load_sae(f"./checkpoints/sae_checkpoint_{layer_name}_num{num_arrays}.pt")
