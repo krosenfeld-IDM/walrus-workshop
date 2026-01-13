@@ -55,7 +55,7 @@ def load_model(config_file, checkpoint, move_to_device=False):
 
 
 def get_trajectory(
-    config_file, dataset_id, trajectory_index=0, split: Literal["val", "test"] = "val"
+    config_file, dataset_id, trajectory_index=0, split: Literal["val", "test", "train"] = "val"
 ):
     """
     Get a trajectory from a dataset.
@@ -104,7 +104,7 @@ def get_trajectory(
     print(f"Using dataset {dataset_names[dataset_index]}")
     if split.lower() == "val":
         dataset = data_module.rollout_val_datasets[dataset_index].sub_dsets[0]
-        trajectory_example = next(
+        trajectory = next(
             islice(
                 data_module.rollout_val_dataloaders()[dataset_index],
                 trajectory_index,
@@ -113,9 +113,18 @@ def get_trajectory(
         )
     elif split.lower() == "test":
         dataset = data_module.rollout_test_datasets[dataset_index].sub_dsets[0]
-        trajectory_example = next(
+        trajectory = next(
             islice(
                 data_module.rollout_test_dataloaders()[dataset_index],
+                trajectory_index,
+                trajectory_index + 1,
+            )
+        )
+    elif split.lower() == "train":
+        dataset = data_module.rollout_train_datasets[dataset_index].sub_dsets[0]
+        trajectory = next(
+            islice(
+                data_module.rollout_train_dataloaders()[dataset_index],
                 trajectory_index,
                 trajectory_index + 1,
             )
@@ -123,4 +132,4 @@ def get_trajectory(
     else:
         raise ValueError(f"Invalid split: {split}")
 
-    return trajectory_example, dataset.metadata
+    return trajectory, dataset.metadata

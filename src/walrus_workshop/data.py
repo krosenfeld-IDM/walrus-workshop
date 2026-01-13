@@ -98,7 +98,7 @@ class LazyNumpyDataset(IterableDataset):
     in/out as needed. This keeps RAM usage bounded regardless of total dataset size.
     """
 
-    def __init__(self, file_paths, d_in, batch_size=4096, seed=0):
+    def __init__(self, file_paths, d_in, batch_size=4096, seed=1132026):
         """
         Args:
             file_paths: List of paths to .npy files

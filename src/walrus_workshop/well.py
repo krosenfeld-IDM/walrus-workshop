@@ -5,7 +5,7 @@ Functions for working with the Well dataset.
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterator, List
+from typing import Dict, Iterator, List, Optional
 import numpy as np
 
 from walrus_workshop import paths
@@ -26,18 +26,17 @@ class WellDatasetItem:
 @dataclass
 class WellDataSet:
     name: str
-    split: str
+    split: Optional[str] = None
     test_size: float = 0.2
     seed: int = 42
     source_split: str = "train"
     well_base_path: str = paths.data / "datasets"
 
     def __post_init__(self):
-        self.path = Path(self.well_base_path) / self.name / self.source_split
+        self.path = Path(self.well_base_path) / self.name / "data" / self.source_split
         
-        # Initialize train and test lists
-        self.train: List[WellDatasetItem] = []
-        self.test: List[WellDatasetItem] = []
+        # Initialize data list
+        self.data: List[WellDatasetItem] = []
         
         # Load and split the dataset
         self._load_and_split()
@@ -106,7 +105,7 @@ class WellDataSet:
         return parameters
     
     def _load_and_split(self):
-        """Load all HDF5 files from the split directory and split into train/test."""
+        """Load all HDF5 files from the split directory and set data based on split parameter."""
         if not self.path.exists():
             raise ValueError(f"Dataset path does not exist: {self.path}")
         
@@ -127,59 +126,38 @@ class WellDataSet:
             )
             all_items.append(item)
         
-        # Split into train/test with reproducible ordering
-        rng = np.random.default_rng(self.seed)
-        indices = np.arange(len(all_items))
-        rng.shuffle(indices)
-        
-        n_test = int(len(all_items) * self.test_size)
-        
-        test_indices = indices[:n_test]
-        train_indices = indices[n_test:]
-        
-        self.test = [all_items[i] for i in test_indices]
-        self.train = [all_items[i] for i in train_indices]
+        # If split is None, use all items
+        if self.split is None:
+            self.data = all_items
+        else:
+            # Split into train/test with reproducible ordering
+            rng = np.random.default_rng(self.seed)
+            indices = np.arange(len(all_items))
+            rng.shuffle(indices)
+            
+            n_test = int(len(all_items) * self.test_size)
+            
+            test_indices = indices[:n_test]
+            train_indices = indices[n_test:]
+            
+            test_items = [all_items[i] for i in test_indices]
+            train_items = [all_items[i] for i in train_indices]
+            
+            # Set data based on split parameter
+            if self.split == "train":
+                self.data = train_items
+            elif self.split == "test":
+                self.data = test_items
+            else:
+                raise ValueError(f"Invalid split: {self.split}. Must be None, 'train', or 'test'")
     
     def __iter__(self) -> Iterator[WellDatasetItem]:
         """
-        Iterator that returns dataset members from the training set (default).
+        Iterator that returns dataset members based on the split parameter.
         
         Yields:
-            WellDatasetItem instances from the training set
+            WellDatasetItem instances from the data list
         """
-        if self.split == "train":
-            return self.iter_train()
-        elif self.split == "test":
-            return self.iter_test()
-        else:
-            raise ValueError(f"Invalid split: {self.split}")
-
-    
-    def iter_train(self) -> Iterator[WellDatasetItem]:
-        """
-        Iterator that returns dataset members from the training set.
-        
-        Yields:
-            WellDatasetItem instances from the training set
-        """
-        for item in self.train:
+        for item in self.data:
             yield item
-    
-    def iter_test(self) -> Iterator[WellDatasetItem]:
-        """
-        Iterator that returns dataset members from the test set.
-        
-        Yields:
-            WellDatasetItem instances from the test set
-        """
-        for item in self.test:
-            yield item
-    
-    def get_train(self) -> List[WellDatasetItem]:
-        """Get the training dataset items."""
-        return self.train
-    
-    def get_test(self) -> List[WellDatasetItem]:
-        """Get the test dataset items."""
-        return self.test
 

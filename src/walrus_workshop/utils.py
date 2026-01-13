@@ -1,7 +1,4 @@
-from typing import List, Tuple, Union
-import numpy as np
 import inspect
-
 
 
 def filter_kwargs(kwargs, module):
@@ -13,5 +10,5 @@ def filter_kwargs(kwargs, module):
     module_args = set(inspect.signature(module.__init__).parameters)
 
     # Create a filtered dict containing ONLY keys that SAE accepts
-    model_kwargs = {k: v for k, v in kwargs.items() if k in module_args}    
-    return model_kwargs 
+    model_kwargs = {k: v for k, v in kwargs.items() if k in module_args}
+    return model_kwargs

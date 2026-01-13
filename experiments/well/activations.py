@@ -11,10 +11,12 @@ from walrus_workshop import paths
 from walrus_workshop.walrus import get_trajectory, load_model
 import torch
 from walrus.data.well_to_multi_transformer import ChannelsFirstWithTimeFormatter
-from walrus_workshop.activation import ActivationManager
 from hydra.utils import instantiate
 from einops import rearrange
 from alive_progress import alive_it
+
+from walrus_workshop.activation import ActivationManager
+from walrus_workshop.well import WellDataSet
 
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -24,7 +26,8 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # Set up logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG) # DEBUG
+logger.setLevel(logging.DEBUG)  # DEBUG
+
 
 # Define the hook function
 def get_activation(name, activations):
@@ -42,7 +45,7 @@ def strided_formatter(data, t_start=0, t_in=6):
     return (x, data["field_indices"], data["boundary_conditions"])
 
 
-print("Loading model...")
+logger.info("Loading model...")
 model, config = load_model(
     config_file=paths.configs / "well_config.yaml",
     checkpoint=paths.checkpoints / "walrus.pt",
@@ -56,33 +59,44 @@ model.eval()
 
 # Identify the layer you want to hook.
 # Print model structure to find the name: print(model)
-layer_name = "blocks.30.space_mixing.activation"
+data_id = 'shear_flow'
+layer_name = "blocks.20.space_mixing.activation"
 target_layer = dict(model.named_modules())[layer_name]
 
 # Manage the activations
 am = ActivationManager(
-    enabled=True, save_dir=os.path.abspath(f"./activations/{layer_name}"), mode="both"
+    enabled=True, save_dir=os.path.abspath(f"./activations/train/{layer_name}/{data_id}"), mode="both"
 )
 logger.info(f"Activation manager save directory: {am.save_dir}")
 activations = {}
 
 # Register the hook
-print(f"Registering hook for {layer_name}")
+logger.info(f"Registering hook for {layer_name}")
 handle = target_layer.register_forward_hook(get_activation(layer_name, activations))
 
 # For normalization later
 formatter = ChannelsFirstWithTimeFormatter()
 revin = instantiate(config.trainer.revin)()  # This is a functools partial by default
 
-num_trajectories = 28
+# Load the dataset files so we can determine the number of trajectories
+dataset = WellDataSet(
+    name=data_id,
+    source_split="train",
+    split=None,
+)
+logger.info(f"Loaded {len(dataset.data)} dataset files")
+
+num_trajectories = len(dataset.data)
+# num_trajectories = 2
+logger.info(f"Processing {num_trajectories} trajectories")
 for trajectory_index in alive_it(range(num_trajectories)):
-    print(f"Getting trajectory {trajectory_index}")
+    logger.info(f"Getting trajectory {trajectory_index}")
     batch, metadata = get_trajectory(
         config_file=paths.configs / "well_config.yaml",
-        dataset_id="shear_flow",
+        dataset_id=data_id,
         trajectory_index=trajectory_index,
-        split="test",
-    )  # 'val' or 'test'
+        split="train",
+    )
     batch = {
         k: v.to(device) if k not in {"metadata", "boundary_conditions"} else v
         for k, v in batch.items()
@@ -100,8 +114,10 @@ for trajectory_index in alive_it(range(num_trajectories)):
     else:
         mask = None
 
-    for t_start in range(0, batch["output_fields"].shape[1] - 6, 6):
-        logger.debug(f"Processing time step {t_start} / {batch['output_fields'].shape[1] - 6}")
+    for t_start in range(0, batch["output_fields"].shape[1] - 6, 6): # TODO: Read this from a config
+        logger.debug(
+            f"Processing time step {t_start} / {batch['output_fields'].shape[1] - 6}"
+        )
         with torch.no_grad():
             # inputs, y_ref = formatter.process_input(
             #     batch,
@@ -125,9 +141,15 @@ for trajectory_index in alive_it(range(num_trajectories)):
             )
             # Inputs T B C H [W D], y_ref B T H [W D] C
             logger.debug(f"Normalized inputs shape: {normalized_inputs[0].shape}")
-            logger.debug(f"Normalized inputs[0] shape: {normalized_inputs[0].shape}")  # data
-            logger.debug(f"Normalized inputs[1] shape: {normalized_inputs[1].shape}")  # field indices
-            logger.debug(f"Normalized inputs[2] shape: {normalized_inputs[2].shape}")  # boundary conditions
+            logger.debug(
+                f"Normalized inputs[0] shape: {normalized_inputs[0].shape}"
+            )  # data
+            logger.debug(
+                f"Normalized inputs[1] shape: {normalized_inputs[1].shape}"
+            )  # field indices
+            logger.debug(
+                f"Normalized inputs[2] shape: {normalized_inputs[2].shape}"
+            )  # boundary conditions
             y_pred = model(
                 normalized_inputs[0],
                 normalized_inputs[1],
@@ -152,9 +174,11 @@ for trajectory_index in alive_it(range(num_trajectories)):
         sae_input = act.reshape(-1, 2816)
 
         # Save the activations
+        file_root = '_'.join([f'{k}_{v.item():0.0e}' for k, v in zip(metadata.constant_field_names, batch['constant_scalars'][0])])
+        output_file_name = file_root + f"_layer{layer_name}"
         logger.debug(f"Saving activations for {layer_name}")
         am.save(
-            f"layer{layer_name}_traj{trajectory_index}_tstart{t_start}",
+            output_file_name,
             sae_input.cpu(),
             step_idx=t_start,
             node_set=list(activations.keys())[0],
