@@ -21,14 +21,13 @@ sudo apt update
 sudo apt install ffmpeg
 ```
 **The well**
+
 Download limited dataset for example:
 ```
-the-well-download --dataset turbulent_radiative_layer_2D --basepath ./data
+the-well-download --dataset shear_flow --basepath ./data
 ```
 You can only use `--first-only` flag to download the first file of the dataset.
 
-**gfortran**
-Or F90 compiler
 
 ## References
 - [Walrus Blog](https://polymathic-ai.org/blog/walrus/)
