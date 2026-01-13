@@ -30,6 +30,10 @@ the-well-download --dataset shear_flow --basepath ./data
 ```
 You can only use `--first-only` flag to download the first file of the dataset.
 
+## Usage
+
+The majority of the scripts are in `experiments/well`.
+
 
 ## References
 - [Walrus Blog](https://polymathic-ai.org/blog/walrus/)
