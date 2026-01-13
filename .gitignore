@@ -18,6 +18,12 @@ wheels/
 *.wandb
 *.mp4
 *.csv
+*.png
 
+# logs
 _output/
 wandb/
+
+# Tools
+.cursor/
+.vscode/

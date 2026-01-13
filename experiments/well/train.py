@@ -15,8 +15,7 @@ from alive_progress import alive_it
 import wandb
 
 from walrus_workshop.model import SAE
-from walrus_workshop.utils import split_test_train
-from walrus_workshop.data import NumpyListDataset, LazyNumpyDataset
+from walrus_workshop.data import split_test_train, NumpyListDataset, LazyNumpyDataset
 
 # Setup logger with handler to output to terminal
 logger = logging.getLogger(__name__)
