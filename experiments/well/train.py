@@ -6,6 +6,7 @@ import os
 import glob
 import logging
 import sys
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -13,6 +14,7 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 from alive_progress import alive_it
 import wandb
+import yaml
 
 from walrus_workshop.model import SAE
 from walrus_workshop.data import split_test_train, NumpyListDataset, LazyNumpyDataset
@@ -30,6 +32,33 @@ if not logger.handlers:
     )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+
+
+def load_config(config_path: str | Path | None = None) -> dict:
+    """
+    Load training configuration from YAML file.
+    
+    Args:
+        config_path: Path to config file. If None, looks for train_config.yml
+                     in the same directory as this script.
+    
+    Returns:
+        Dictionary containing configuration
+    """
+    if config_path is None:
+        script_dir = Path(__file__).parent
+        config_path = script_dir / "train_config.yml"
+    else:
+        config_path = Path(config_path)
+    
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    logger.info(f"Loaded config from {config_path}")
+    return config
 
 
 def train_sae(
@@ -214,29 +243,42 @@ def save_sae(save_path, cfg=None, model=None):
     logger.info(f"Model saved to {save_path}")
 
 
-def train_demo():
-    # Hyperparameters
-    batch_size = 1024
+def train_demo(config_path: str | Path | None = None):
+    # Load configuration from YAML
+    config = load_config(config_path)
+    
+    # Extract configuration sections
+    model_cfg = config.get("model", {})
+    training_cfg = config.get("training", {})
+    wandb_cfg_dict = config.get("wandb", {})
+    demo_cfg = config.get("demo", {})
+    
+    # Build cfg dictionary for model
+    batch_size = training_cfg.get("batch_size", 1024)
+    d_in = model_cfg.get("d_in", 768)
+    latent = model_cfg.get("latent", d_in * 4)
+    
     cfg = {
-        "d_in": 768,
-        "latent": 768 * 4,
-        "k_active": 32,
-        "k_aux": 512,
-        "dead_window": 50_000,
+        "d_in": d_in,
+        "latent": latent,
+        "k_active": model_cfg.get("k_active", 32),
+        "k_aux": model_cfg.get("k_aux", 512),
+        "dead_window": model_cfg.get("dead_window", 50_000),
         "batch_size": batch_size,
     }
+    
+    # Build wandb_cfg dictionary
     wandb_cfg = {
-        "use_wandb": True,  # Set to True to enable wandb logging
-        "wandb_project": "walrus-workshop-demo",
-        "wandb_run_name": None,  # None will auto-generate a name
+        "use_wandb": wandb_cfg_dict.get("use_wandb", True),
+        "wandb_project": wandb_cfg_dict.get("wandb_project", "walrus-workshop-demo"),
+        "wandb_run_name": wandb_cfg_dict.get("wandb_run_name", None),
     }
 
     # 1. Generate Dummy Data (N numpy arrays)
-    # Simulating 5 arrays, each with 10k samples of dim 768
-    num_arrays = 5
-    samples_per_array = 10_000
+    num_arrays = demo_cfg.get("num_arrays", 5)
+    samples_per_array = demo_cfg.get("samples_per_array", 10_000)
     numpy_arrays = [
-        np.random.randn(samples_per_array, cfg.get("d_in", 768)).astype(np.float32)
+        np.random.randn(samples_per_array, d_in).astype(np.float32)
         for _ in range(num_arrays)
     ]
 
@@ -246,22 +288,26 @@ def train_demo():
 
     # 2. Initialize Model
     model = SAE(
-        d_in=cfg.get("d_in", 768),
-        latent=cfg.get("latent", 768 * 4),
-        k_active=cfg.get("k_active", 32),
-        k_aux=cfg.get("k_aux", 512),
-        dead_window=cfg.get("dead_window", 50_000),
+        d_in=cfg["d_in"],
+        latent=cfg["latent"],
+        k_active=cfg["k_active"],
+        k_aux=cfg["k_aux"],
+        dead_window=cfg["dead_window"],
     )
 
     # 3. Train
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device_str = training_cfg.get("device", "cuda")
+    device = device_str if device_str == "cpu" else ("cuda" if torch.cuda.is_available() else "cpu")
+    lr = training_cfg.get("learning_rate", 3e-4)
+    epochs = demo_cfg.get("epochs", training_cfg.get("epochs", 3))
+    
     trained_model = train_sae(
         model,
         dataloader,
         total_samples=len(dataset),
         batches_per_epoch=len(dataloader),
-        lr=3e-4,
-        epochs=3,
+        lr=lr,
+        epochs=epochs,
         device=device,
         wandb_cfg=wandb_cfg,
         sae_cfg=cfg,
@@ -271,16 +317,33 @@ def train_demo():
 
 def train_walrus(
     layer_name: str,
-    num_arrays: int | None = 10,
-    num_workers: int = 4,
+    num_arrays: int | None = None,
+    num_workers: int | None = None,
     save: bool = False,
+    config_path: str | Path | None = None,
 ):
+    # Load configuration from YAML
+    config = load_config(config_path)
+    
+    # Extract configuration sections
+    model_cfg = config.get("model", {})
+    training_cfg = config.get("training", {})
+    wandb_cfg_dict = config.get("wandb", {})
+    walrus_cfg = config.get("walrus", {})
+    
+    # Override num_arrays and num_workers from config if not provided
+    if num_arrays is None:
+        num_arrays = walrus_cfg.get("num_arrays", None)
+    if num_workers is None:
+        num_workers = walrus_cfg.get("num_workers", 4)
+    
     save_dir = os.path.abspath(f"./activations/{layer_name}")
     act_files = sorted(glob.glob(os.path.join(save_dir, "*.npy")))
     act_shape = np.load(act_files[0], mmap_mode="r").shape
 
     # Split into train/test using reproducible split
-    train_files, _ = split_test_train(act_files, random_state=42)
+    random_state = walrus_cfg.get("random_state", 42)
+    train_files, _ = split_test_train(act_files, random_state=random_state)
 
     # Limit to num_arrays if specified
     if num_arrays is not None:
@@ -288,48 +351,66 @@ def train_walrus(
     else:
         num_arrays = len(train_files)
 
-    batch_size = 1024
+    batch_size = training_cfg.get("batch_size", 1024)
+    d_in = act_shape[1]  # Dynamic: determined from data
+    expansion_factor = model_cfg.get("expansion_factor", 32)
+    latent = d_in * expansion_factor  # Dynamic: d_in * expansion_factor
 
     # Setup lazy-loading dataset (memory-efficient)
     logger.info(f"Setting up lazy loading for {len(train_files)} activation files")
     dataset = LazyNumpyDataset(
-        train_files, d_in=act_shape[1], batch_size=batch_size, seed=42
+        train_files, d_in=d_in, batch_size=batch_size, seed=random_state
     )
     # batch_size=None because LazyNumpyDataset already yields batches
     dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=None)
 
     cfg = {
-        "d_in": act_shape[1],
-        "latent": act_shape[1] * 32,  # d_in x expansion factor
-        "k_active": 32,
-        "k_aux": 512,
+        "d_in": d_in,
+        "latent": latent,
+        "k_active": model_cfg.get("k_active", 32),
+        "k_aux": model_cfg.get("k_aux", 512),
+        "dead_window": model_cfg.get("dead_window", 50_000),
         "batch_size": batch_size,
     }
 
+    # Build wandb_cfg with dynamic layer_name
+    wandb_project_base = wandb_cfg_dict.get("wandb_project", "walrus-workshop")
+    wandb_project = f"{wandb_project_base}-{layer_name}"
+    wandb_run_name = wandb_cfg_dict.get("wandb_run_name", None)
+    if wandb_run_name is None:
+        wandb_run_name = (
+            f"num_arrays={num_arrays}, k_active={cfg['k_active']}, "
+            f"k_aux={cfg['k_aux']}, latent={cfg['latent']}"
+        )
+    
     wandb_cfg = {
-        "use_wandb": True,  # Set to True to enable wandb logging
-        "wandb_project": f"walrus-workshop-{layer_name}",
-        "wandb_run_name": f"num_arrays={num_arrays}, k_active={cfg.get('k_active', 32)}, k_aux={cfg.get('k_aux', 512)}, latent={cfg.get('latent', 768 * 4)}",
+        "use_wandb": wandb_cfg_dict.get("use_wandb", True),
+        "wandb_project": wandb_project,
+        "wandb_run_name": wandb_run_name,
     }
 
     # Initialize Model
     model = SAE(
-        d_in=cfg.get("d_in", 768),
-        latent=cfg.get("latent", 768 * 4),
-        k_active=cfg.get("k_active", 32),
-        k_aux=cfg.get("k_aux", 512),
-        dead_window=cfg.get("dead_window", 50_000),
+        d_in=cfg["d_in"],
+        latent=cfg["latent"],
+        k_active=cfg["k_active"],
+        k_aux=cfg["k_aux"],
+        dead_window=cfg["dead_window"],
     )
 
     # Train
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device_str = training_cfg.get("device", "cuda")
+    device = device_str if device_str == "cpu" else ("cuda" if torch.cuda.is_available() else "cpu")
+    lr = training_cfg.get("learning_rate", 3e-4)
+    epochs = walrus_cfg.get("epochs", training_cfg.get("epochs", 5))
+    
     trained_model = train_sae(
         model,
         dataloader,
         total_samples=dataset.total_samples,
         batches_per_epoch=dataset.total_batches,
-        lr=3e-4,
-        epochs=5,
+        lr=lr,
+        epochs=epochs,
         device=device,
         wandb_cfg=wandb_cfg,
         sae_cfg=cfg,
