@@ -1,1 +1,0 @@
-- Use the virtual environment located at .venv (uv source .venv/bin/activate)
