@@ -33,7 +33,7 @@ def test_well_dataset_item_parameters():
 def test_extract_parameters_shear_flow_format(tmp_path):
     """Test parameter extraction for shear_flow naming convention."""
     # Create a temporary directory structure to avoid loading actual dataset
-    test_dir = tmp_path / "test" / "train"
+    test_dir = tmp_path / "test" / "data" / "train"
     test_dir.mkdir(parents=True)
     # Create a dummy file so the dataset can initialize
     (test_dir / "dummy.hdf5").touch()
@@ -60,7 +60,7 @@ def test_extract_parameters_shear_flow_format(tmp_path):
 def test_extract_parameters_rayleigh_benard_format(tmp_path):
     """Test parameter extraction for rayleigh_benard naming convention."""
     # Create a temporary directory structure
-    test_dir = tmp_path / "test" / "train"
+    test_dir = tmp_path / "test" / "data" / "train"
     test_dir.mkdir(parents=True)
     (test_dir / "dummy.hdf5").touch()
     
@@ -86,7 +86,7 @@ def test_extract_parameters_rayleigh_benard_format(tmp_path):
 def test_extract_parameters_combined_format(tmp_path):
     """Test parameter extraction with combined ParamNameValue format."""
     # Create a temporary directory structure
-    test_dir = tmp_path / "test" / "train"
+    test_dir = tmp_path / "test" / "data" / "train"
     test_dir.mkdir(parents=True)
     (test_dir / "dummy.hdf5").touch()
     
@@ -111,7 +111,7 @@ def test_extract_parameters_combined_format(tmp_path):
 def test_dataset_split_none(tmp_path):
     """Test that split=None uses the entire dataset."""
     # Create a temporary directory structure with multiple files
-    test_dir = tmp_path / "test" / "train"
+    test_dir = tmp_path / "test" / "data" / "train"
     test_dir.mkdir(parents=True)
     
     # Create multiple dummy files
@@ -140,7 +140,7 @@ def test_dataset_split_none(tmp_path):
 def test_dataset_split_train_vs_test(tmp_path):
     """Test that train and test splits are different and non-overlapping."""
     # Create a temporary directory structure with multiple files
-    test_dir = tmp_path / "test" / "train"
+    test_dir = tmp_path / "test" / "data" / "train"
     test_dir.mkdir(parents=True)
     
     # Create multiple dummy files
@@ -185,7 +185,7 @@ def test_shear_flow_dataset_load():
     """Test loading the shear_flow dataset and verify train/test split."""
     # The actual path structure is data/datasets/shear_flow/data/train
     # So we need to adjust the well_base_path accordingly
-    well_base_path = paths.data / "datasets" / "shear_flow" / "data"
+    well_base_path = paths.data / "datasets"
     
     # Count actual files in the directory
     train_path = paths.data / "datasets" / "shear_flow" / "data" / "train"
@@ -194,7 +194,7 @@ def test_shear_flow_dataset_load():
     
     # Create train and test datasets
     train_dataset = WellDataSet(
-        name="",  # Empty name since we're already in the data directory
+        name="shear_flow",  # Empty name since we're already in the data directory
         split="train",
         well_base_path=well_base_path,
         source_split="train",
@@ -203,7 +203,7 @@ def test_shear_flow_dataset_load():
     )
     
     test_dataset = WellDataSet(
-        name="",
+        name="shear_flow",
         split="test",
         well_base_path=well_base_path,
         source_split="train",
@@ -234,10 +234,10 @@ def test_shear_flow_dataset_load():
 )
 def test_shear_flow_dataset_iterators():
     """Test that iterators work correctly for train and test sets."""
-    well_base_path = paths.data / "datasets" / "shear_flow" / "data"
+    well_base_path = paths.data / "datasets"
     
     train_dataset = WellDataSet(
-        name="",
+        name="shear_flow",
         split="train",
         well_base_path=well_base_path,
         source_split="train",
@@ -246,7 +246,7 @@ def test_shear_flow_dataset_iterators():
     )
     
     test_dataset = WellDataSet(
-        name="",
+        name="shear_flow",
         split="test",
         well_base_path=well_base_path,
         source_split="train",
@@ -276,11 +276,11 @@ def test_shear_flow_dataset_iterators():
 )
 def test_shear_flow_dataset_reproducibility():
     """Test that the dataset split is reproducible with the same seed."""
-    well_base_path = paths.data / "datasets" / "shear_flow" / "data"
+    well_base_path = paths.data / "datasets"
     
     # Create two train datasets with the same seed
     train_dataset1 = WellDataSet(
-        name="",
+        name="shear_flow",
         split="train",
         well_base_path=well_base_path,
         source_split="train",
@@ -289,7 +289,7 @@ def test_shear_flow_dataset_reproducibility():
     )
     
     train_dataset2 = WellDataSet(
-        name="",
+        name="shear_flow",
         split="train",
         well_base_path=well_base_path,
         source_split="train",
@@ -299,7 +299,7 @@ def test_shear_flow_dataset_reproducibility():
     
     # Create two test datasets with the same seed
     test_dataset1 = WellDataSet(
-        name="",
+        name="shear_flow",
         split="test",
         well_base_path=well_base_path,
         source_split="train",
@@ -308,7 +308,7 @@ def test_shear_flow_dataset_reproducibility():
     )
     
     test_dataset2 = WellDataSet(
-        name="",
+        name="shear_flow",
         split="test",
         well_base_path=well_base_path,
         source_split="train",
@@ -335,10 +335,10 @@ def test_shear_flow_dataset_reproducibility():
 )
 def test_shear_flow_dataset_parameter_extraction():
     """Test that parameters are correctly extracted from shear_flow filenames."""
-    well_base_path = paths.data / "datasets" / "shear_flow" / "data"
+    well_base_path = paths.data / "datasets"
     
     train_dataset = WellDataSet(
-        name="",
+        name="shear_flow",
         split="train",
         well_base_path=well_base_path,
         source_split="train",
@@ -347,7 +347,7 @@ def test_shear_flow_dataset_parameter_extraction():
     )
     
     test_dataset = WellDataSet(
-        name="",
+        name="shear_flow",
         split="test",
         well_base_path=well_base_path,
         source_split="train",
