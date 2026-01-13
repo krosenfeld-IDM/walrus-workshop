@@ -106,8 +106,8 @@ def run_maes(layer_name: str, num_arrays: int, num_exemplars_per_feature: int, a
 if __name__ == "__main__":
 
     layer_name = "blocks.20.space_mixing.activation"
-    num_arrays = 150
+    num_arrays = 358
     num_exemplars_per_feature = 20  # Number of top exemplars to save per feature
     activation_threshold = 0.0 # Threshold for SAE feature activation
         
-    run_maes(layer_name, num_arrays, num_exemplars_per_feature, activation_threshold)
+    # run_maes(layer_name, num_arrays, num_exemplars_per_feature, activation_threshold) # $$

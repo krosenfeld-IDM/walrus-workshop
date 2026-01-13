@@ -16,6 +16,8 @@ wheels/
 *.npy
 *.log
 *.wandb
+*.mp4
+*.csv
 
 _output/
 wandb/

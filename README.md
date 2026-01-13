@@ -1,5 +1,7 @@
 # README
 
+Interpreting a Walrus.
+
 ## Setup
 
 Setup environment with uv: `uv sync` and make sure you have dependencies:
