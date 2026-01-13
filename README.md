@@ -4,11 +4,13 @@ Interpreting a Walrus.
 
 ## Setup
 
-Setup environment with uv: `uv sync` and make sure you have dependencies:
+Setup environment with uv: `uv sync`
+
+Make sure you have dependencies:
 
 **walrus**
 
-Included as a submodule. Install without dependencies.
+A branch of my fork is included as a submodule. Install without dependencies.
 ```
 git submodule update --init --recursive
 cd src/walrus

@@ -87,8 +87,6 @@ dataset = WellDataSet(
 logger.info(f"Loaded {len(dataset.data)} dataset files")
 
 num_trajectories = len(dataset.data)
-# num_trajectories = 2
-logger.info(f"Processing {num_trajectories} trajectories")
 for trajectory_index in alive_it(range(num_trajectories)):
     logger.info(f"Getting trajectory {trajectory_index}")
     batch, metadata = get_trajectory(

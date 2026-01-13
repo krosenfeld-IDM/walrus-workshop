@@ -29,5 +29,6 @@ demo:
 
 # Walrus-specific settings (for train_walrus)
 walrus:
+  dataset: "shear_flow"
   num_workers: 4
   random_state: 42  # For train/test split

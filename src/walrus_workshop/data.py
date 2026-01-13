@@ -115,7 +115,7 @@ class LazyNumpyDataset(IterableDataset):
         # Pre-compute file metadata using mmap (doesn't load data into RAM)
         self.file_meta = []
         for f in self.files:
-            arr = np.load(f, mmap_mode="r")
+            arr = np.load(str(f), mmap_mode="r")
             assert arr.ndim == 2 and arr.shape[1] == d_in, f"{f} has shape {arr.shape}"
             self.file_meta.append({"path": f, "n_samples": arr.shape[0]})
 
