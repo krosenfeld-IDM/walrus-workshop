@@ -17,12 +17,14 @@ import wandb
 
 from walrus_workshop.utils import load_config
 from walrus_workshop.model import SAE
-from walrus_workshop.data import NumpyListDataset, LazyNumpyDataset
+from walrus_workshop.data import LazyZarrDataset
 from walrus_workshop.activation import ActivationsDataSet
 
 # Setup logger with handler to output to terminal
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Create console handler if one doesn't exist
 if not logger.handlers:
@@ -217,82 +219,6 @@ def save_sae(save_path, cfg=None, model=None):
     logger.info(f"Model saved to {save_path}")
 
 
-def train_demo(config_path: str | Path | None = None):
-    # Load configuration from YAML
-    config = load_config(config_path)
-
-    # Extract configuration sections
-    model_cfg = config.get("model", {})
-    training_cfg = config.get("training", {})
-    wandb_cfg_dict = config.get("wandb", {})
-    demo_cfg = config.get("demo", {})
-
-    # Build cfg dictionary for model
-    batch_size = training_cfg.get("batch_size", 1024)
-    d_in = model_cfg.get("d_in", 768)
-    latent = model_cfg.get("latent", d_in * 4)
-
-    cfg = {
-        "d_in": d_in,
-        "latent": latent,
-        "k_active": model_cfg.get("k_active", 32),
-        "k_aux": model_cfg.get("k_aux", 512),
-        "dead_window": model_cfg.get("dead_window", 50_000),
-        "batch_size": batch_size,
-    }
-
-    # Build wandb_cfg dictionary
-    wandb_cfg = {
-        "use_wandb": wandb_cfg_dict.get("use_wandb", True),
-        "wandb_project": wandb_cfg_dict.get("wandb_project", "walrus-workshop-demo"),
-        "wandb_run_name": wandb_cfg_dict.get("wandb_run_name", None),
-    }
-
-    # 1. Generate Dummy Data (N numpy arrays)
-    num_arrays = demo_cfg.get("num_arrays", 5)
-    samples_per_array = demo_cfg.get("samples_per_array", 10_000)
-    numpy_arrays = [
-        np.random.randn(samples_per_array, d_in).astype(np.float32)
-        for _ in range(num_arrays)
-    ]
-
-    # Create dataset and dataloader (small data, OK to load in memory)
-    dataset = NumpyListDataset(numpy_arrays)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-    # 2. Initialize Model
-    model = SAE(
-        d_in=cfg["d_in"],
-        latent=cfg["latent"],
-        k_active=cfg["k_active"],
-        k_aux=cfg["k_aux"],
-        dead_window=cfg["dead_window"],
-    )
-
-    # 3. Train
-    device_str = training_cfg.get("device", "cuda")
-    device = (
-        device_str
-        if device_str == "cpu"
-        else ("cuda" if torch.cuda.is_available() else "cpu")
-    )
-    lr = training_cfg.get("learning_rate", 3e-4)
-    epochs = demo_cfg.get("epochs", training_cfg.get("epochs", 3))
-
-    trained_model = train_sae(
-        model,
-        dataloader,
-        total_samples=len(dataset),
-        batches_per_epoch=len(dataloader),
-        lr=lr,
-        epochs=epochs,
-        device=device,
-        wandb_cfg=wandb_cfg,
-        sae_cfg=cfg,
-    )
-    return trained_model, cfg
-
-
 def train_walrus(
     layer_name: str,
     num_arrays: int | None = None,
@@ -310,19 +236,13 @@ def train_walrus(
     walrus_cfg = config.get("walrus", {})
 
 
-
-    # save_dir = os.path.abspath(f"./activations/{layer_name}")
-    # act_files = sorted(glob.glob(os.path.join(save_dir, "*.npy")))
-    # act_shape = np.load(act_files[0], mmap_mode="r").shape
-
-    # Split into train/test using reproducible split, using in-distribution data for the source split
-    # random_state = walrus_cfg.get("random_state", 42)
-    # train_files, _ = split_test_train(act_files, random_state=random_state)
+    # Split into train/test using reproducible split=
     datasets = ActivationsDataSet(
         name=walrus_cfg.get("dataset", "shear_flow"),
         layer_name=layer_name,
-        split="train",
+        split=training_cfg.get("split", "train"),
         seed=walrus_cfg.get("random_state", 42),
+        source_split=training_cfg.get("source_split", "test"),
     )
     train_files = datasets.data
 
@@ -345,9 +265,7 @@ def train_walrus(
 
     # Setup lazy-loading dataset (memory-efficient)
     logger.info(f"Setting up lazy loading for {len(train_files)} activation files")
-    dataset = LazyNumpyDataset(train_files, d_in=datasets.d_in, batch_size=batch_size)
-    # batch_size=None because LazyNumpyDataset already yields batches
-    dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=None)
+    dataloader = datasets.to_dataloader(batch_size=batch_size, num_workers=num_workers)
 
     cfg = {
         "d_in": datasets.d_in,
@@ -384,20 +302,14 @@ def train_walrus(
     )
 
     # Train
-    device_str = training_cfg.get("device", "cuda")
-    device = (
-        device_str
-        if device_str == "cpu"
-        else ("cuda" if torch.cuda.is_available() else "cpu")
-    )
     lr = training_cfg.get("learning_rate", 3e-4)
     epochs = walrus_cfg.get("epochs", training_cfg.get("epochs", 5))
 
     trained_model = train_sae(
         model,
         dataloader,
-        total_samples=dataset.total_samples,
-        batches_per_epoch=dataset.total_batches,
+        total_samples=dataloader.dataset.total_samples,
+        batches_per_epoch=dataloader.dataset.total_batches,
         lr=lr,
         epochs=epochs,
         device=device,
@@ -407,7 +319,7 @@ def train_walrus(
 
     if save:
         save_sae(
-            save_path=f"./checkpoints/sae_checkpoint_{layer_name}_num{num_arrays}.pt",
+            save_path=f"./checkpoints/sae_checkpoint_{layer_name}_source_{training_cfg.get('source_split', 'train')}.pt",
             cfg=cfg,
             model=trained_model,
         )

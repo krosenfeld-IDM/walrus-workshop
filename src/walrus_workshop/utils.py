@@ -8,15 +8,15 @@ def load_config(config_path: str | Path | None = None) -> dict:
     Load training configuration from YAML file.
 
     Args:
-        config_path: Path to config file. If None, looks for train_config.yml
-                     in the same directory as this script.
+        config_path: Path to config file. If None, looks for train.yaml
+                     in the local configs directory.
 
     Returns:
         Dictionary containing configuration
     """
     if config_path is None:
         script_dir = Path(os.getcwd())
-        config_path = script_dir / "train_config.yml"
+        config_path = script_dir / "configs" / "train.yaml"
     else:
         config_path = Path(config_path)
 
