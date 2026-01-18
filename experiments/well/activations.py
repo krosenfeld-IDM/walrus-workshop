@@ -39,7 +39,6 @@ activations_config_file = Path("./configs").resolve() / "activations.yaml"
 activations_config = OmegaConf.load(activations_config_file)
 walrus_config_file = paths.configs / "well_config.yaml"
 walrus_config = OmegaConf.load(walrus_config_file)
-print(activations_config)
 
 # Load the dataset files so we can determine the number of trajectories
 dataset = WellDataset(
@@ -51,7 +50,6 @@ dataset = WellDataset(
     use_normalization=False,
 )
 num_trajectories = sum(dataset.metadata.n_trajectories_per_file)
-print(f"Number of trajectories: {num_trajectories}")
 
 # Define the hook function
 def get_activation(name, activations):
@@ -157,27 +155,15 @@ for trajectory_index in alive_it(range(num_trajectories)):
                 normalized_inputs[0], normalization_stats
             )
             # Inputs T B C H [W D], y_ref B T H [W D] C
-            logger.debug(f"Normalized inputs shape: {normalized_inputs[0].shape}")
-            logger.debug(
-                f"Normalized inputs[0] shape: {normalized_inputs[0].shape}"
-            )  # data
-            logger.debug(
-                f"Normalized inputs[1] shape: {normalized_inputs[1].shape}"
-            )  # field indices
-            logger.debug(
-                f"Normalized inputs[2] shape: {normalized_inputs[2].shape}"
-            )  # boundary conditions
             y_pred = model(
                 normalized_inputs[0],
                 normalized_inputs[1],
                 normalized_inputs[2].tolist(),
                 metadata=metadata,
             )
-            logger.debug(f"y_pred shape: {y_pred.shape}")
 
         # Access the captured activations
         act = activations[layer_name]
-        logger.debug(f"Captured activations shape: {act.shape}")
 
         # Current shape: [T, 32, 32, 1, 2816]
         # Target shape:  [Total_Tokens, Hidden_Dim]
@@ -193,7 +179,6 @@ for trajectory_index in alive_it(range(num_trajectories)):
         # Save the activations
         file_root = f'traj_{trajectory_index}_' + '_'.join([f'{k}_{v.item():0.0e}' for k, v in zip(batch["metadata"].constant_scalar_names, batch['constant_scalars'][0])])
         output_file_name = file_root + f"_layer{layer_name}"
-        logger.debug(f"Saving activations for {layer_name}")
         am.save(
             output_file_name,
             sae_input.cpu(),
