@@ -14,7 +14,6 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 from alive_progress import alive_it
 import wandb
-import yaml
 
 from walrus_workshop.utils import load_config
 from walrus_workshop.model import SAE

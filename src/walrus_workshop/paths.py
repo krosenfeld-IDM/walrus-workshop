@@ -9,3 +9,5 @@ experiments = root / "experiments"
 checkpoints = root / "checkpoints"
 
 configs = root / "configs"
+
+well_base_path = data / "datasets"

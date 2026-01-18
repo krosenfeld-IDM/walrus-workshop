@@ -19,6 +19,7 @@ wheels/
 *.mp4
 *.csv
 *.png
+*.zarr/
 
 # logs
 _output/

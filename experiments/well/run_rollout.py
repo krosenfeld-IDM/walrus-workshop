@@ -74,14 +74,14 @@ def main(
     else:
         dataset_index = dataset_id
     print(f"Using dataset {dataset_names[dataset_index]}")
-    dataset = data_module.rollout_test_datasets[dataset_index].sub_dsets[
+    dataset = data_module.rollout_train_datasets[dataset_index].sub_dsets[
         0
     ]
     metadata = dataset.metadata
 
-    trajectory_example = next(
+    trajectory = next(
         islice(
-            data_module.rollout_test_dataloaders()[dataset_index],
+            data_module.rollout_train_dataloaders()[dataset_index],
             trajectory_index,
             trajectory_index + 1,
         )
@@ -95,7 +95,7 @@ def main(
                 k + f"{c.item():.2e}"
                 for k, c in zip(
                     metadata.constant_scalar_names,
-                    trajectory_example["constant_scalars"][0],
+                    trajectory["constant_scalars"][0],
                 )
             ]
         )
@@ -103,11 +103,11 @@ def main(
 
     logger.info(f"Processing trajectory {trajectory_name}")
     with torch.no_grad():
-        trajectory_example["padded_field_mask"] = trajectory_example[
+        trajectory["padded_field_mask"] = trajectory[
             "padded_field_mask"
         ].to(device)  # We're going to want this out here too
         inputs, y_ref = formatter.process_input(
-            trajectory_example,
+            trajectory,
             causal_in_time=model.causal_in_time,
             predict_delta=True,
             train=False,
@@ -115,7 +115,7 @@ def main(
         y_pred, y_ref = rollout_model(
             model,
             revin,
-            trajectory_example,
+            trajectory,
             formatter,
             max_rollout_steps=200,
             device=device,
@@ -124,15 +124,15 @@ def main(
         # Lets get some extra info so we can visualize our data effectively
         # Remove unused fields
         y_pred, y_ref = (
-            y_pred[..., trajectory_example["padded_field_mask"]],
-            y_ref[..., trajectory_example["padded_field_mask"]],
+            y_pred[..., trajectory["padded_field_mask"]],
+            y_ref[..., trajectory["padded_field_mask"]],
         )
         # Collecting names to make detailed output logs
         field_names = flatten_field_names(metadata, include_constants=False)
         used_field_names = [
             f
             for i, f in enumerate(field_names)
-            if trajectory_example["padded_field_mask"][i]
+            if trajectory["padded_field_mask"][i]
         ]
 
     if enstrophy:
@@ -180,5 +180,5 @@ if __name__ == "__main__":
     import os
 
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    for trajectory_index in range(0,28):
+    for trajectory_index in range(0,100):
         main(dataset_id="shear_flow", enstrophy=True, video=True, trajectory_index=trajectory_index)

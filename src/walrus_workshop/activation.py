@@ -4,13 +4,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Sequence
 import numpy as np
+import zarr
 
 from walrus_workshop import paths
 
 
 class ActivationManager:
     """
-    Handles selective saving of activations from GraphCast layers.
+    Handles selective saving of activations from walrus.
 
     Source: https://github.com/theodoremacmillan/graphcast/blob/sae-hooks/graphcast/deep_typed_graph_net.py
     """
@@ -64,12 +65,12 @@ class ActivationManager:
         arr = np.asarray(x).copy()
 
         safe_tag = tag.replace("/", "_")
-        step_prefix = f"layer{step_idx:04d}_" if step_idx is not None else ""
+        step_prefix = f"step_{step_idx:04d}_" if step_idx is not None else ""
         time_suffix = f"_t{ts}" if ts else ""
         node_suffix = f"_{node_set}" if node_set else ""
 
-        fname = f"{step_prefix}{safe_tag}{time_suffix}.npy"
-        np.save(os.path.join(self.save_dir, fname), arr)
+        fname = f"{step_prefix}{safe_tag}{time_suffix}.zarr"
+        zarr.save(os.path.join(self.save_dir, fname), arr.astype(np.float16))
 
     def get_cache(self):
         """Return in-memory cache (if using memory mode)."""
@@ -318,3 +319,7 @@ class ActivationsDataSet:
         """
         for item in self.data:
             yield item
+
+    def __len__(self) -> int:
+        """Return the number of items in the dataset."""
+        return len(self.data)

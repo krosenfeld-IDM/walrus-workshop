@@ -1,5 +1,15 @@
 """
-Save activations from a specific layer of the model
+Save activations from a specific layer of the model for later analysis.
+
+Traceback (most recent call last):                                          
+  File "/home/krosenfeld/projects/walrus-workshop/experiments/well/activations.py", line 111, in <module>                                                                                                                                                                                                         
+    batch, metadata = get_trajectory(                                       
+                      ^^^^^^^^^^^^^^^                                       
+  File "/home/krosenfeld/projects/walrus-workshop/src/walrus_workshop/walrus.py", line 141, in get_trajectory                                                                                                                                                                                                     
+    assert trajectory_id < sum(metadata.n_trajectories_per_file), f"Trajectory ID {trajectory_id} is out of range (ID >= {sum(metadata.n_trajectories_per_file)})"                                                                                                                                                
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                                                                                         
+AssertionError: Trajectory ID 32 is out of range (ID >= 32)  
+
 """
 
 from torch._tensor import Tensor
@@ -7,16 +17,20 @@ from torch._tensor import Tensor
 from typing import Any
 import os
 import logging
-from walrus_workshop import paths
-from walrus_workshop.walrus import get_trajectory, load_model
+from omegaconf import OmegaConf
+
 import torch
 from walrus.data.well_to_multi_transformer import ChannelsFirstWithTimeFormatter
 from hydra.utils import instantiate
 from einops import rearrange
 from alive_progress import alive_it
+from the_well.data import WellDataset
+from pathlib import Path
 
 from walrus_workshop.activation import ActivationManager
-from walrus_workshop.well import WellDataSet
+from walrus_workshop import paths
+from walrus_workshop.walrus import get_trajectory, load_model
+
 
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -28,6 +42,30 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # DEBUG
 
+# Settings
+data_id = 'shear_flow'
+split = "test"
+layer_name = "blocks.20.space_mixing.activation"
+checkpoint_file = paths.checkpoints / "walrus.pt"
+activations_config_file = Path("./configs").resolve() / "activations.yaml"
+activations_config = OmegaConf.load(activations_config_file)
+walrus_config_file = paths.configs / "well_config.yaml"
+walrus_config = OmegaConf.load(walrus_config_file)
+print(activations_config)
+
+# Load the dataset files so we can determine the number of trajectories
+dataset = WellDataset(
+    well_base_path=paths.well_base_path,
+    well_dataset_name=data_id,
+    well_split_name=split,
+    n_steps_input=walrus_config.data.module_parameters.n_steps_input,
+    n_steps_output=walrus_config.data.module_parameters.n_steps_output,
+    use_normalization=False,
+)
+num_trajectories = sum(dataset.metadata.n_trajectories_per_file)
+for i in range(dataset.metadata.n_files):
+    num_trajectories += dataset.metadata.n_trajectories_per_file[i]
+print(f"Number of trajectories: {num_trajectories}")
 
 # Define the hook function
 def get_activation(name, activations):
@@ -40,15 +78,15 @@ def get_activation(name, activations):
 
 
 def strided_formatter(data, t_start=0, t_in=6):
-    x = data["output_fields"][:, t_start : t_start + t_in, ...]
-    x = rearrange(x, "b t ... c -> t b c ...")
+    x = data["input_fields"][:, t_start : t_start + t_in, ...] # B T ...
+    x = rearrange(x, "B T ... C -> T B C ...")
     return (x, data["field_indices"], data["boundary_conditions"])
 
 
 logger.info("Loading model...")
 model, config = load_model(
-    config_file=paths.configs / "well_config.yaml",
-    checkpoint=paths.checkpoints / "walrus.pt",
+    config_file=walrus_config_file,
+    checkpoint=checkpoint_file,
     move_to_device=True,
 )
 model.eval()
@@ -59,13 +97,11 @@ model.eval()
 
 # Identify the layer you want to hook.
 # Print model structure to find the name: print(model)
-data_id = 'shear_flow'
-layer_name = "blocks.20.space_mixing.activation"
-target_layer = dict(model.named_modules())[layer_name]
+target_layer = dict[Any, Any](model.named_modules())[layer_name]
 
 # Manage the activations
 am = ActivationManager(
-    enabled=True, save_dir=os.path.abspath(f"./activations/train/{layer_name}/{data_id}"), mode="both"
+    enabled=True, save_dir=os.path.abspath(f"./activations/{split}/{layer_name}/{data_id}"), mode="both"
 )
 logger.info(f"Activation manager save directory: {am.save_dir}")
 activations = {}
@@ -78,22 +114,12 @@ handle = target_layer.register_forward_hook(get_activation(layer_name, activatio
 formatter = ChannelsFirstWithTimeFormatter()
 revin = instantiate(config.trainer.revin)()  # This is a functools partial by default
 
-# Load the dataset files so we can determine the number of trajectories
-dataset = WellDataSet(
-    name=data_id,
-    source_split="train",
-    split=None,
-)
-logger.info(f"Loaded {len(dataset.data)} dataset files")
-
-num_trajectories = len(dataset.data)
 for trajectory_index in alive_it(range(num_trajectories)):
     logger.info(f"Getting trajectory {trajectory_index}")
     batch, metadata = get_trajectory(
-        config_file=paths.configs / "well_config.yaml",
         dataset_id=data_id,
-        trajectory_index=trajectory_index,
-        split="train",
+        trajectory_id=trajectory_index,
+        split=split,
     )
     batch = {
         k: v.to(device) if k not in {"metadata", "boundary_conditions"} else v
@@ -112,9 +138,9 @@ for trajectory_index in alive_it(range(num_trajectories)):
     else:
         mask = None
 
-    for t_start in range(0, batch["output_fields"].shape[1] - 6, 6): # TODO: Read this from a config
+    for t_start in range(0, batch["input_fields"].shape[1] - 6, 6): # TODO: Read this from the config
         logger.debug(
-            f"Processing time step {t_start} / {batch['output_fields'].shape[1] - 6}"
+            f"Processing time step {t_start} / {batch['input_fields'].shape[1] - 6}"
         )
         with torch.no_grad():
             # inputs, y_ref = formatter.process_input(
@@ -172,7 +198,7 @@ for trajectory_index in alive_it(range(num_trajectories)):
         sae_input = act.reshape(-1, 2816)
 
         # Save the activations
-        file_root = '_'.join([f'{k}_{v.item():0.0e}' for k, v in zip(metadata.constant_field_names, batch['constant_scalars'][0])])
+        file_root = f'traj_{trajectory_index}_' + '_'.join([f'{k}_{v.item():0.0e}' for k, v in zip(batch["metadata"].constant_scalar_names, batch['constant_scalars'][0])])
         output_file_name = file_root + f"_layer{layer_name}"
         logger.debug(f"Saving activations for {layer_name}")
         am.save(
