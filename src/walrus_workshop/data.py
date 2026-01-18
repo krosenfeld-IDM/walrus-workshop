@@ -1,6 +1,7 @@
 from torch.utils.data import Dataset, IterableDataset
 import numpy as np
 import torch
+import zarr
 from typing import List, Tuple, Union
 
 def split_test_train(
@@ -143,3 +144,63 @@ class LazyNumpyDataset(IterableDataset):
                     break
                 # np.asarray forces a copy from mmap to contiguous array
                 yield torch.from_numpy(np.asarray(X[sel, :])).float()
+
+
+class LazyZarrDataset(IterableDataset):
+    """
+    Memory-efficient dataset that streams from .zarr files without loading all into RAM.
+
+    Uses zarr's chunked storage for lazy loading, allowing efficient partial reads.
+    Compression reduces disk I/O while chunking enables reading only needed data.
+    """
+
+    def __init__(self, file_paths, d_in, batch_size=4096, seed=1132026):
+        """
+        Args:
+            file_paths: List of paths to .zarr directories
+            d_in: Expected feature dimension
+            batch_size: Number of samples per batch
+            seed: Random seed for shuffling
+        """
+        super().__init__()
+        self.files = [str(f) for f in file_paths]
+        self.d_in = d_in
+        self.batch = batch_size
+        self.seed = seed
+
+        # Pre-compute file metadata (lazy - doesn't load data)
+        self.file_meta = []
+        for f in self.files:
+            arr = zarr.open(f, mode='r')
+            assert arr.ndim == 2 and arr.shape[1] == d_in, f"{f} has shape {arr.shape}"
+            self.file_meta.append({"path": f, "n_samples": arr.shape[0]})
+
+        self.total_samples = sum(m["n_samples"] for m in self.file_meta)
+        self.total_batches = (self.total_samples + batch_size - 1) // batch_size
+
+    def __iter__(self):
+        # Handle multi-worker sharding
+        worker = torch.utils.data.get_worker_info()
+        nw = worker.num_workers if worker else 1
+        wid = worker.id if worker else 0
+        rng = np.random.default_rng(self.seed + 997 * wid)
+
+        # Each worker gets a shard of files
+        file_shard = self.file_meta[wid::nw]
+        rng.shuffle(file_shard)
+
+        for md in file_shard:
+            # Open zarr array for this file (lazy, read-only)
+            arr = zarr.open(md["path"], mode='r')
+            n = arr.shape[0]
+            perm = rng.permutation(n)
+
+            for start in range(0, n, self.batch):
+                sel = perm[start:start + self.batch]
+                if len(sel) == 0:
+                    break
+                # Sort indices for sequential chunk reads, then unsort
+                sorted_idx = np.argsort(sel)
+                data = np.asarray(arr[sel[sorted_idx]])
+                data = data[np.argsort(sorted_idx)]
+                yield torch.from_numpy(data).float()

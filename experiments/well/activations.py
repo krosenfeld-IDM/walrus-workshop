@@ -1,20 +1,8 @@
 """
 Save activations from a specific layer of the model for later analysis.
 
-Traceback (most recent call last):                                          
-  File "/home/krosenfeld/projects/walrus-workshop/experiments/well/activations.py", line 111, in <module>                                                                                                                                                                                                         
-    batch, metadata = get_trajectory(                                       
-                      ^^^^^^^^^^^^^^^                                       
-  File "/home/krosenfeld/projects/walrus-workshop/src/walrus_workshop/walrus.py", line 141, in get_trajectory                                                                                                                                                                                                     
-    assert trajectory_id < sum(metadata.n_trajectories_per_file), f"Trajectory ID {trajectory_id} is out of range (ID >= {sum(metadata.n_trajectories_per_file)})"                                                                                                                                                
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                                                                                         
-AssertionError: Trajectory ID 32 is out of range (ID >= 32)  
-
 """
 
-from torch._tensor import Tensor
-
-from typing import Any
 import os
 import logging
 from omegaconf import OmegaConf
@@ -22,7 +10,7 @@ from omegaconf import OmegaConf
 import torch
 from walrus.data.well_to_multi_transformer import ChannelsFirstWithTimeFormatter
 from hydra.utils import instantiate
-from einops import rearrange
+from einops import rearrange, repeat
 from alive_progress import alive_it
 from the_well.data import WellDataset
 from pathlib import Path
@@ -63,8 +51,6 @@ dataset = WellDataset(
     use_normalization=False,
 )
 num_trajectories = sum(dataset.metadata.n_trajectories_per_file)
-for i in range(dataset.metadata.n_files):
-    num_trajectories += dataset.metadata.n_trajectories_per_file[i]
 print(f"Number of trajectories: {num_trajectories}")
 
 # Define the hook function
@@ -78,8 +64,15 @@ def get_activation(name, activations):
 
 
 def strided_formatter(data, t_start=0, t_in=6):
-    x = data["input_fields"][:, t_start : t_start + t_in, ...] # B T ...
+    x = data["input_fields"][:, t_start : t_start + t_in, ...]  # B T ...
     x = rearrange(x, "B T ... C -> T B C ...")
+    if "constant_fields" in data:
+        flat_constants = repeat(
+            data["constant_fields"],
+            "b ... c -> (repeat) b c ...",
+            repeat=x.shape[0],
+        )
+        x = torch.cat([x, flat_constants], dim=2)
     return (x, data["field_indices"], data["boundary_conditions"])
 
 
@@ -97,7 +90,7 @@ model.eval()
 
 # Identify the layer you want to hook.
 # Print model structure to find the name: print(model)
-target_layer = dict[Any, Any](model.named_modules())[layer_name]
+target_layer = dict(model.named_modules())[layer_name]
 
 # Manage the activations
 am = ActivationManager(
@@ -153,7 +146,7 @@ for trajectory_index in alive_it(range(num_trajectories)):
             # This is where we pull out the inputs (vs the whole trajectory)
             # inputs, _ = formatter.process_input(batch)
             inputs = strided_formatter(batch, t_start=t_start, t_in=6)
-            inputs = list[Tensor | Any](inputs)
+            inputs = list(inputs)
             with torch.no_grad():
                 normalization_stats = revin.compute_stats(
                     inputs[0], metadata, epsilon=1e-5
@@ -195,7 +188,7 @@ for trajectory_index in alive_it(range(num_trajectories)):
 
         # 2. Flatten the batch and spatial dimensions
         # Shape becomes: [T * 32 * 32, 2816] -> [10240, 2816]
-        sae_input = act.reshape(-1, 2816)
+        sae_input = act.reshape(-1, act.shape[-1])
 
         # Save the activations
         file_root = f'traj_{trajectory_index}_' + '_'.join([f'{k}_{v.item():0.0e}' for k, v in zip(batch["metadata"].constant_scalar_names, batch['constant_scalars'][0])])
