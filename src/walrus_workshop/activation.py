@@ -3,6 +3,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Sequence
+from torch.utils.data import DataLoader
 import numpy as np
 import zarr
 
@@ -256,23 +257,25 @@ class ActivationsDataSet:
             # Compute d_in from data if not already set
             if not self.data:
                 raise ValueError("Cannot compute d_in: no data loaded")
-            self._d_in = np.load(self.data[0].full_path, mmap_mode="r").shape[1]
+            arr = zarr.open(str(self.data[0].full_path), mode='r')
+            self._d_in = arr.shape[1]
         return self._d_in
 
     def _load_and_split(self):
-        """Load all .npy files from the directory and set data based on split parameter."""
+        """Load all .zarr files from the directory and set data based on split parameter."""
         if not self.path.exists():
             raise ValueError(f"Activations path does not exist: {self.path}")
-        
-        # Find all .npy files
-        npy_files = sorted(self.path.glob("*.npy"))
-        
-        if not npy_files:
-            raise ValueError(f"No .npy files found in {self.path}")
+
+        # Find all .zarr directories
+        zarr_files = sorted([p for p in self.path.iterdir()
+                            if p.suffix == '.zarr' and p.is_dir()])
+
+        if not zarr_files:
+            raise ValueError(f"No .zarr files found in {self.path}")
         
         # Create dataset items
         all_items = []
-        for file_path in npy_files:
+        for file_path in zarr_files:
             metadata = self._extract_metadata(file_path.name)
             item = ActivationsDatasetItem(
                 filename=file_path.name,
@@ -323,3 +326,23 @@ class ActivationsDataSet:
     def __len__(self) -> int:
         """Return the number of items in the dataset."""
         return len(self.data)
+
+    def to_dataloader(self, batch_size: int = 4096, num_workers: int = 4, seed: Optional[int] = None) -> DataLoader:
+        """
+        Create a PyTorch DataLoader for this dataset.
+
+        Args:
+            batch_size: Number of samples per batch
+            num_workers: Number of DataLoader workers
+            seed: Random seed for shuffling (defaults to self.seed)
+
+        Returns:
+            PyTorch DataLoader ready for training
+        """
+        from walrus_workshop.data import LazyZarrDataset
+
+        file_paths = [item.full_path for item in self.data]
+        seed = seed if seed is not None else self.seed
+
+        ds = LazyZarrDataset(file_paths, d_in=self.d_in, batch_size=batch_size, seed=seed)
+        return DataLoader(ds, num_workers=num_workers, batch_size=None)

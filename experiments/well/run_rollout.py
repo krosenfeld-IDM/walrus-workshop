@@ -1,5 +1,6 @@
 from omegaconf import OmegaConf
 import torch
+import sys
 from hydra.utils import instantiate
 from walrus_workshop import paths
 from walrus.data.well_to_multi_transformer import ChannelsFirstWithTimeFormatter
@@ -9,13 +10,21 @@ from the_well.benchmark.metrics import make_video
 import os
 import polars as pl
 from walrus_workshop.metrics import compute_enstrophy
-from alive_progress import alive_it
 import logging
+from walrus_workshop.walrus import get_trajectory
 from itertools import islice
+from einops import rearrange
 
 # Set up logger
 logger = logging.getLogger(__name__)
-# logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.DEBUG)
+
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
 
 def main(
@@ -29,6 +38,7 @@ def main(
         paths.checkpoints / "walrus.pt", map_location="cpu", weights_only=True
     )["app"]["model"]
     config = OmegaConf.load(paths.configs / "well_config.yaml")
+    config.data.module_parameters.max_rollout_steps = 200
 
     # The dataset objects precompute a number of dataset stats on init, so this may take a little while
     data_module = instantiate(
@@ -54,7 +64,7 @@ def main(
         n_states=total_input_fields,
     )
     # Load the checkpoint
-    logger.info(f"Loading checkpoint")
+    logger.info("Loading checkpoint")
     model.load_state_dict(checkpoint)
 
     # Move to the device we want
@@ -74,14 +84,14 @@ def main(
     else:
         dataset_index = dataset_id
     print(f"Using dataset {dataset_names[dataset_index]}")
-    dataset = data_module.rollout_train_datasets[dataset_index].sub_dsets[
+    dataset = data_module.rollout_test_datasets[dataset_index].sub_dsets[
         0
     ]
     metadata = dataset.metadata
 
     trajectory = next(
         islice(
-            data_module.rollout_train_dataloaders()[dataset_index],
+            data_module.rollout_test_dataloaders()[dataset_index],
             trajectory_index,
             trajectory_index + 1,
         )
@@ -135,7 +145,11 @@ def main(
             if trajectory["padded_field_mask"][i]
         ]
 
-    if enstrophy:
+        # Prepend first input timesteps
+        y0_device = trajectory["input_fields"].to(device)[..., trajectory['padded_field_mask']]
+        y_ref = torch.cat([y0_device, y_ref], dim=1)
+        y_pred = torch.cat([y0_device, y_pred], dim=1)
+
         enstrophy_ref = []
         enstrophy_pred = []
 
@@ -180,5 +194,5 @@ if __name__ == "__main__":
     import os
 
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    for trajectory_index in range(0,100):
-        main(dataset_id="shear_flow", enstrophy=True, video=True, trajectory_index=trajectory_index)
+    for trajectory_index in range(0,150):
+        main(dataset_id="shear_flow", enstrophy=True, video=False, trajectory_index=trajectory_index)

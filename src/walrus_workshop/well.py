@@ -182,3 +182,7 @@ class WellDataSet:
         """
         for item in self.data:
             yield item
+
+    def __len__(self) -> int:
+        """Return the number of items in the dataset."""
+        return len(self.data)
