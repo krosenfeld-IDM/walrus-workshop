@@ -195,4 +195,4 @@ if __name__ == "__main__":
 
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     for trajectory_index in range(0,150):
-        main(dataset_id="shear_flow", enstrophy=True, video=True, trajectory_index=trajectory_index)
+        main(dataset_id="shear_flow", enstrophy=True, video=False, trajectory_index=trajectory_index)
