@@ -1,0 +1,3 @@
+# Configurations for the activations
+activations:
+  layer: "blocks.20.space_mixing.activation"

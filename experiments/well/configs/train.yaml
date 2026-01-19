@@ -2,12 +2,11 @@
 
 # Model architecture parameters
 model:
-  d_in: 768  # Input dimension (can be overridden dynamically)
   latent: 3072  # Latent dimension (d_in * 4 by default, can be d_in * expansion_factor)
   expansion_factor: 32  # Multiplier for latent dimension (latent = d_in * expansion_factor)
-  k_active: 32  # Number of active neurons
+  k_active: 128  # Number of active neurons
   k_aux: 512  # Number of auxiliary neurons
-  dead_window: 50000  # Window for dead neuron tracking
+  dead_window: 500_000  # Window for dead neuron tracking
 
 # Training hyperparameters
 training:
@@ -16,6 +15,7 @@ training:
   learning_rate: 0.0003  # 3e-4
   epochs: 5
   source_split: "test"
+  save_every: "epoch"
 
 # Wandb configuration
 wandb:
