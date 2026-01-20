@@ -56,21 +56,25 @@ def load_model(config_file, checkpoint, move_to_device=False):
 
     return model, config
 
-TRAJECTORY_CONFIG = {
-    '_target_': 'walrus.data.MixedWellDataModule',
-    'batch_size': 1,
-    'n_steps_input': 199,
-    'n_steps_output': 1,
-    'min_dt_stride': 1,
-    'max_dt_stride': 1,
-    'max_samples': 2000,
-    'well_dataset_info': {
-        'shear_flow': {
-            'include_filters': [],
-            'exclude_filters': [],
+
+def default_trajectory_config():
+    return {
+        '_target_': 'walrus.data.MixedWellDataModule',
+        'batch_size': 1,
+        'n_steps_input': 199,
+        'n_steps_output': 1,
+        'min_dt_stride': 1,
+        'max_dt_stride': 1,
+        'max_samples': 2000,
+        'well_dataset_info': {
+            'shear_flow': {
+                'include_filters': [],
+                'exclude_filters': [],
+            }
         }
     }
-}
+
+TRAJECTORY_CONFIG = default_trajectory_config()
 
 FIELD_INDEX_MAP_OVERRIDE = OmegaConf.load(paths.configs / "field_index_map_override.yaml")
 
@@ -168,7 +172,7 @@ def get_trajectory(
             for k in ['constant_scalars']:
                 assert np.allclose(trajectory[k], window[k])
 
-    return trajectory, metadata
+    return trajectory, trajectory['metadata']
 
 
 def get_trajectory_slow(

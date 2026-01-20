@@ -6,6 +6,7 @@ import re
 from alive_progress import alive_it
 from omegaconf import OmegaConf
 from walrus_workshop.metrics import compute_enstrophy
+from walrus_workshop.walrus import get_trajectory, TRAJECTORY_CONFIG
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -43,7 +44,6 @@ def plot_entrophy():
 
 
 def calc_enstrophy(dataset_id: str = "shear_flow", trajectory_id: int = 0):
-    from walrus_workshop.walrus import get_trajectory, TRAJECTORY_CONFIG
 
     config = OmegaConf.create(TRAJECTORY_CONFIG)
     trajectory, metadata = get_trajectory(

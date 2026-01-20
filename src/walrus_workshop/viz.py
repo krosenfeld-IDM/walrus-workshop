@@ -3,7 +3,7 @@ from matplotlib.animation import FFMpegWriter
 import numpy as np
 import os
 from the_well.data.utils import flatten_field_names
-from the_well.data import WellMetadata
+from the_well.data.datasets import WellMetadata
 from typing import List
 import torch
 
@@ -30,7 +30,7 @@ def make_video(
     true_images: torch.Tensor,
     metadata: WellMetadata,
     output_dir: str,
-    epoch_number: int = 0,
+    prefix: str = "well",
     field_name_overrides: List[str] = None,
     size_multiplier: float = 1.0,
 ):
@@ -120,7 +120,7 @@ def make_video(
     # Setup output path
     write_path = f"{output_dir}/{metadata.dataset_name}/rollout_video"
     os.makedirs(write_path, exist_ok=True)
-    output_file = f"{write_path}/epoch{epoch_number}_{dset_name}.mp4"
+    output_file = f"{write_path}/{prefix}_{dset_name}.mp4"
 
     n_frames = true_images.shape[0]
     fps = max(5, min(16, int(n_frames / 8)))
@@ -150,6 +150,8 @@ def make_video(
 
     if n_fields == 1:
         axes = axes[:, np.newaxis]
+    elif axes.ndim == 1:
+        axes = axes[np.newaxis, :]
 
     suptitle = fig.suptitle(
         f"{dset_name}", fontsize=14, fontweight="bold", y=0.98

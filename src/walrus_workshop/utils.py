@@ -2,6 +2,17 @@ import inspect
 from pathlib import Path
 import yaml
 import os
+import re
+
+def get_keyvalue_from_string(string: str):
+    """
+    Extract the key and value from a string in the format "KeyValue".
+    """
+
+    if match := re.match(r'([a-zA-Z]+)([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)', string):
+        return match
+    else:
+        return None
 
 def load_config(config_path: str | Path | None = None) -> dict:
     """
