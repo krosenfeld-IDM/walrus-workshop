@@ -27,11 +27,15 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # Set up logger
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # DEBUG
 
 # Settings
-data_id = 'shear_flow'
+data_id = "shear_flow"
 split = "test"
 layer_name = "blocks.20.space_mixing.activation"
 checkpoint_file = paths.checkpoints / "walrus.pt"
@@ -50,6 +54,7 @@ dataset = WellDataset(
     use_normalization=False,
 )
 num_trajectories = sum(dataset.metadata.n_trajectories_per_file)
+
 
 # Define the hook function
 def get_activation(name, activations):
@@ -92,7 +97,9 @@ target_layer = dict(model.named_modules())[layer_name]
 
 # Manage the activations
 am = ActivationManager(
-    enabled=True, save_dir=os.path.abspath(f"./activations/{split}/{layer_name}/{data_id}"), mode="both"
+    enabled=True,
+    save_dir=os.path.abspath(f"./activations/{split}/{layer_name}/{data_id}"),
+    mode="both",
 )
 logger.info(f"Activation manager save directory: {am.save_dir}")
 activations = {}
@@ -129,7 +136,9 @@ for trajectory_index in alive_it(range(num_trajectories)):
     else:
         mask = None
 
-    for t_start in range(0, batch["input_fields"].shape[1] - 6, 6): # TODO: Read this from the config
+    for t_start in range(
+        0, batch["input_fields"].shape[1] - 6, 6
+    ):  # TODO: Read this from the config
         logger.debug(
             f"Processing time step {t_start} / {batch['input_fields'].shape[1] - 6}"
         )
@@ -177,7 +186,15 @@ for trajectory_index in alive_it(range(num_trajectories)):
         sae_input = act.reshape(-1, act.shape[-1])
 
         # Save the activations
-        file_root = f'traj_{trajectory_index}_' + '_'.join([f'{k}_{v.item():0.0e}' for k, v in zip(batch["metadata"].constant_scalar_names, batch['constant_scalars'][0])])
+        file_root = f"traj_{trajectory_index}_" + "_".join(
+            [
+                f"{k}_{v.item():0.0e}"
+                for k, v in zip(
+                    batch["metadata"].constant_scalar_names,
+                    batch["constant_scalars"][0],
+                )
+            ]
+        )
         output_file_name = file_root + f"_layer{layer_name}"
         am.save(
             output_file_name,

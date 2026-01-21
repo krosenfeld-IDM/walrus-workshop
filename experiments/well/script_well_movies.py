@@ -38,9 +38,9 @@ def make_well_movie(dataset_id: str = "shear_flow", trajectory_id: int = 0, spli
         + f"{trajectory_id}_"
         + "_".join(
             [
-                k + f"{c.item():.2e}"
-                for k, c in zip(
-                    metadata.constant_scalar_names,
+                f"{k}_{v.item():0.0e}"
+                for k, v in zip(
+                    trajectory["metadata"].constant_scalar_names,
                     trajectory["constant_scalars"][0],
                 )
             ]
@@ -49,7 +49,13 @@ def make_well_movie(dataset_id: str = "shear_flow", trajectory_id: int = 0, spli
 
     make_video(y_ref[0][:100], metadata, output_dir="movies", prefix=trajectory_name, field_name_overrides=used_field_names)
 
-    print(f"Done with {trajectory_name}")
+    # import json   
+    # output_dir = "movies/test"
+    # os.makedirs(output_dir, exist_ok=True)
+    # with open(os.path.join(output_dir, f"{trajectory_name}.txt"), "w") as f:
+    #     f.write(json.dumps(trajectory["extra_metadata"]))
+        
+    # print(f"Done with {trajectory_name}")
 
 
 if __name__ == "__main__":
@@ -57,7 +63,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_parallel", "-p", type=int, default=1)
-    parser.add_argument("--max_workers", "-w", type=int, default=2)
+    parser.add_argument("--max_workers", "-w", type=int, default=4)
     parser.add_argument("--split", "-s", type=str, default="test")
 
     args = parser.parse_args()
@@ -67,7 +73,7 @@ if __name__ == "__main__":
 
         max_workers = args.max_workers  # Limit to 8 concurrent threads (takes about 8GB RAM per thread for 100 frames)
 
-        trajectory_ids = list(range(2,8))
+        trajectory_ids = list(range(0,112))
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
@@ -82,7 +88,7 @@ if __name__ == "__main__":
                     future.result()
                     bar()  # advance progress by 1 completed task
     else:
-        for trajectory_id in alive_it(range(0,112)):    
+        for trajectory_id in alive_it(range(4,112)):    
             make_well_movie("shear_flow", trajectory_id, args.split)
 
     print("Done")

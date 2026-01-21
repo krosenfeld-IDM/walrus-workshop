@@ -66,8 +66,8 @@ def calc_enstrophy(dataset_id: str = "shear_flow", trajectory_id: int = 0):
         + f"_{trajectory_id}_"
         + "_".join(
             [
-                k + f"{c.item():.2e}"
-                for k, c in zip(
+                f"{k}_{v.item():0.0e}"
+                for k, v in zip(
                     metadata.constant_scalar_names,
                     trajectory["constant_scalars"][0],
                 )
@@ -81,6 +81,6 @@ def calc_enstrophy(dataset_id: str = "shear_flow", trajectory_id: int = 0):
 
 
 if __name__ == "__main__":
-    for i in alive_it(range(150)):
+    for i in alive_it(range(112)):
         calc_enstrophy(dataset_id="shear_flow", trajectory_id=i)
     # plot_entrophy()
