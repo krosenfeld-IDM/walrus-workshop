@@ -50,11 +50,10 @@ def make_well_movie(dataset_id: str = "shear_flow", trajectory_id: int = 0, spli
     make_video(y_ref[0][:100], metadata, output_dir="movies", prefix=trajectory_name, field_name_overrides=used_field_names)
 
     # import json   
-    # output_dir = "movies/test"
+    # output_dir = "movies/debug"
     # os.makedirs(output_dir, exist_ok=True)
     # with open(os.path.join(output_dir, f"{trajectory_name}.txt"), "w") as f:
-    #     f.write(json.dumps(trajectory["extra_metadata"]))
-        
+    #     f.write(json.dumps(trajectory["extra_metadata"]))        
     # print(f"Done with {trajectory_name}")
 
 
