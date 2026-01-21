@@ -120,7 +120,7 @@ for trajectory_index in alive_it(range(num_trajectories)):
         split=split,
     )
     batch = {
-        k: v.to(device) if k not in {"metadata", "boundary_conditions"} else v
+        k: v.to(device) if k not in {"metadata", "boundary_conditions", "extra_metadata"} else v
         for k, v in batch.items()
     }
     # Extract mask and move to device for loss eval
@@ -188,8 +188,8 @@ for trajectory_index in alive_it(range(num_trajectories)):
         # Save the activations
         file_root = f"traj_{trajectory_index}_" + "_".join(
             [
-                f"{k}_{v.item():0.0e}"
-                for k, v in zip(
+                f"{k}_{c.item():0.0e}"
+                for k, c in zip(
                     batch["metadata"].constant_scalar_names,
                     batch["constant_scalars"][0],
                 )
@@ -202,5 +202,13 @@ for trajectory_index in alive_it(range(num_trajectories)):
             step_idx=t_start,
             node_set=list(activations.keys())[0],
         )
+
+        # import json   
+        # output_dir = "activations/debug"
+        # os.makedirs(output_dir, exist_ok=True)
+        # with open(os.path.join(output_dir, f"{file_root}.txt"), "w") as f:
+        #     f.write(json.dumps(batch["extra_metadata"]))
+        # print(f"Done with {file_root}")        
+        # break
 
 print("Done")
