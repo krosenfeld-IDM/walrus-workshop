@@ -14,6 +14,9 @@ def get_keyvalue_from_string(string: str):
     else:
         return None
 
+def get_filename_post_fix(trajectory_index: int, kv_dict: dict) -> str:
+    return f"traj_{trajectory_index}_" + "_".join([f"{k}_{v:0.0e}" for k, v in kv_dict.items()])    
+
 def load_config(config_path: str | Path | None = None) -> dict:
     """
     Load training configuration from YAML file.

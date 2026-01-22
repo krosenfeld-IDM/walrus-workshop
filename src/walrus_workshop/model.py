@@ -261,6 +261,8 @@ class SAE(nn.Module):
         self.b_pre = nn.Parameter(torch.zeros(d_in))  # shared pre/post bias
 
         # --- Hyperparameters ---
+        self.d_in = d_in
+        self.latent = latent
         self.k = k_active
         self.k_aux = k_aux
         self.unit_norm_decoder = unit_norm_decoder
@@ -283,6 +285,15 @@ class SAE(nn.Module):
 
             # 3. Zero shared bias
             self.b_pre.zero_()
+
+    def get_config(self):
+        return dict(
+            d_in=self.d_in,
+            latent=self.latent,
+            k_active=self.k,
+            k_aux=self.k_aux,
+            dead_window=self.dead_window,
+        )
 
     def _renorm_decoder_columns_(self):
         """

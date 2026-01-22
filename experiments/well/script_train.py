@@ -46,7 +46,6 @@ def train_sae(
     epochs=10,
     device="cuda",
     wandb_cfg=None,
-    sae_cfg=None,
     save_every=None,
     checkpoint_dir=None,
     checkpoint_prefix=None,
@@ -63,11 +62,12 @@ def train_sae(
         epochs: Number of epochs
         device: Device to train on
         wandb_cfg: Wandb configuration dict
-        sae_cfg: SAE configuration dict for logging
         save_every: Save checkpoint every N batches (None to disable)
         checkpoint_dir: Directory for checkpoint files
         checkpoint_prefix: Prefix for checkpoint filenames
     """
+    sae_cfg = sae_model.get_config()
+
     # Initialize wandb if requested
     use_wandb = wandb_cfg is not None and wandb_cfg.get("use_wandb", False)
     if use_wandb:
@@ -197,7 +197,7 @@ def train_sae(
                 if save_every == "epoch":
                     if epoch > 0 and batch_idx == 0:
                         os.makedirs(checkpoint_dir, exist_ok=True)
-                        save_path = f"{checkpoint_dir}/{checkpoint_prefix}_epoch_{epoch + 1}.pt"
+                        save_path = f"{checkpoint_dir}/{checkpoint_prefix}_epoch_{epoch}.pt"
                         save_sae(save_path=save_path, cfg=sae_cfg, model=sae_model)
                 else:
                     global_step = epoch * batches_per_epoch + batch_idx
@@ -307,13 +307,16 @@ def train_walrus(
         "wandb_run_name": wandb_run_name,
     }
 
-    # Initialize Model
-    model = SAE(
-        d_in=model_cfg.get("d_in", datasets.d_in),
-        latent=model_cfg.get("latent", datasets.d_in) * model_cfg.get("expansion_factor", 32),
+    sae_cfg = dict(
+        d_in=datasets.d_in,
+        latent=datasets.d_in * model_cfg.get("expansion_factor", 32),
         k_active=model_cfg.get("k_active", 128),
         k_aux=model_cfg.get("k_aux", 512),
         dead_window=model_cfg.get("dead_window", 500_000),
+    )
+    # Initialize Model
+    model = SAE(
+        **sae_cfg,
     )
 
     # Train
@@ -335,7 +338,6 @@ def train_walrus(
         epochs=epochs,
         device=device,
         wandb_cfg=wandb_cfg,
-        sae_cfg=model_cfg,
         save_every=save_every,
         checkpoint_dir="./checkpoints",
         checkpoint_prefix=checkpoint_prefix,
@@ -345,10 +347,10 @@ def train_walrus(
         os.makedirs("./checkpoints", exist_ok=True)
         save_sae(
             save_path=f"./checkpoints/sae_checkpoint_{layer_name}_source_{training_cfg.get('source_split', 'train')}.pt",
-            cfg=cfg,
+            cfg=trained_model.get_config(),
             model=trained_model,
         )
-    return trained_model, cfg
+    return trained_model, trained_model.get_config()
 
 
 if __name__ == "__main__":

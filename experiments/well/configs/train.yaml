@@ -2,7 +2,6 @@
 
 # Model architecture parameters
 model:
-  latent: 3072  # Latent dimension (d_in * 4 by default, can be d_in * expansion_factor)
   expansion_factor: 32  # Multiplier for latent dimension (latent = d_in * expansion_factor)
   k_active: 128  # Number of active neurons
   k_aux: 512  # Number of auxiliary neurons

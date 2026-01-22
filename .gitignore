@@ -20,6 +20,7 @@ wheels/
 *.csv
 *.png
 *.zarr/
+*.txt
 
 # logs
 _output/

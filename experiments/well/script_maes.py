@@ -91,6 +91,7 @@ def run_maes(
                 }
 
             candidate_scores = feature[mask]
+            
             # Map the masked position back to the activation indices
             batch_positions = np.nonzero(mask)[0].astype(np.int64)
 
