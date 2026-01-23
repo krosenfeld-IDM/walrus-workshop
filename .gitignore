@@ -21,6 +21,7 @@ wheels/
 *.png
 *.zarr/
 *.txt
+*.pkl
 
 # logs
 _output/

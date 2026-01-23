@@ -171,9 +171,9 @@ def run_sae_top_enstrophy(data_id: str = "shear_flow", epoch: int = 4, num_top_e
 
     # loop over trajctories
     for row in alive_it(df.iter_rows(named=True), total=len(df)):
-        act_files = glob.glob(str(activations_dir / f"*_traj_{row["id"]}*"))
-        results = {}
-        for file in act_files:
+        act_files = sorted(glob.glob(str(activations_dir / f"*_traj_{row["id"]}*")))
+        # results = {}
+        for file_idx, file in enumerate(act_files):
             act = zarr.open(file, mode="r")
 
             # Move to device
@@ -195,18 +195,19 @@ def run_sae_top_enstrophy(data_id: str = "shear_flow", epoch: int = 4, num_top_e
                 # save
                 features[feature_idx] = (values.cpu().numpy()[:num_top_features], top_features.cpu().numpy()[:num_top_features])
 
-            results[file] = features
+            # results[file] = features
+            output_path = os.path.join("sae", "top_enstrophy", f"top_enstrophy_traj_{row['id']}_file_{file_idx}.pkl")
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            logger.debug(f"Saving results to {output_path}")
+            with open(output_path, "wb") as f:
+                pickle.dump({'features':features, 'file':file}, f)
 
             # Free GPU memory
             del xb, code, features
             if device.type == "cuda":
                 torch.cuda.empty_cache()
 
-        output_path = os.path.join("sae", "top_enstrophy", f"top_enstrophy_{row['id']}.pkl")
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        logger.debug(f"Saving results to {output_path}")
-        with open(output_path, "wb") as f:
-            pickle.dump(results, f)
+
 
 
 
