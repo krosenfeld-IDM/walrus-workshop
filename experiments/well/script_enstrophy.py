@@ -144,7 +144,7 @@ def load_enstrophy_df(data_id: str = "shear_flow"):
     return df
 
 
-def run_sae_top_enstrophy(data_id: str = "shear_flow", epoch: int = 4, num_top_enstrophy: int = 20, num_top_features: int = 20, split="test"):
+def run_sae_top_enstrophy(data_id: str = "shear_flow", num_top_enstrophy: int = 20, num_top_features: int = 20, split="test"):
     """Identify the trajectories / numerical simulations that contain the largest enstrophy values and run the SAE on them"""
 
     layer_name = "blocks.20.space_mixing.activation"
@@ -190,7 +190,7 @@ def run_sae_top_enstrophy(data_id: str = "shear_flow", epoch: int = 4, num_top_e
             for feature_idx in range(n_features):
                 # Get activations for this feature across all nodes
                 # top_features = code[:, feature_idx].sort(descending=True)[:top_features].cpu().numpy()  
-                (values, top_features) = torch.sort(code[:, feature_idx], descending=True)                
+                (values, top_features) = torch.sort(code[:, feature_idx], descending=True)  # sorted, indices            
                 
                 # save
                 features[feature_idx] = (values.cpu().numpy()[:num_top_features], top_features.cpu().numpy()[:num_top_features])

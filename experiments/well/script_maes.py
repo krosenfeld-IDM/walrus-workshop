@@ -7,6 +7,7 @@ from walrus_workshop.model import load_sae
 from alive_progress import alive_it
 import numpy as np
 import os
+import zarr
 import pickle
 import gzip
 import logging
@@ -16,58 +17,55 @@ from walrus_workshop.activation import ActivationsDataSet
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
+# Set up logger
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
-# logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.DEBUG)
 
 
 def run_maes(
     layer_name: str,
-    num_arrays: int,
     num_exemplars_per_feature: int,
     activation_threshold: float,
+    data_id: str = "shear_flow",
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Load configuration from YAML
-    config = load_config()
-
-    # Extract configuration sections
-    # model_cfg = config.get("model", {})
-    # training_cfg = config.get("training", {})
-    # wandb_cfg_dict = config.get("wandb", {})
-    walrus_cfg = config.get("walrus", {})
 
     # Load activation files
     # save_dir = os.path.abspath(f"./activations/{layer_name}")
     # act_files = sorted(glob.glob(os.path.join(save_dir, "*.npy")))
 
     datasets = ActivationsDataSet(
-        name=walrus_cfg.get("dataset", "shear_flow"),
+        name=data_id,
         layer_name=layer_name,
-        split="train",
-        seed=walrus_cfg.get("random_state", 42),
+        split=None,
+        source_split="test",
     )
-    train_files = datasets.data
+    files = datasets.data
 
     # Load the trained SAE
-    sae_model, config = load_sae(
-        f"./checkpoints/sae_checkpoint_{layer_name}_num{num_arrays}.pt"
+    checkpoint_path = os.path.join(
+        "checkpoints", "sae_checkpoint_blocks.20.space_mixing.activation_source_test.pt"
     )
+    sae_model, sae_config = load_sae(checkpoint_path)
     sae_model = sae_model.to(device).eval()
 
-    # Get the number of features from the SAE config
-    n_features = config["latent"]
+    # Get the number of features from the SAE sae_config
+    n_features = sae_config["latent"]
 
     # Store the top features
     top_features = {}
 
-    logger.info(f"Processing {len(train_files)} test files to find MAEs...")
-    for file_idx, file in enumerate(alive_it(train_files)):
+    logger.info(f"Processing {len(files)} test files to find MAEs...")
+    for file_idx, file in enumerate(alive_it(files)):
         # Load the activations
-        act = np.load(file)
+        act =  zarr.open(file, mode="r")
 
         # Move to device
-        xb = torch.from_numpy(act).to(device)
+        xb = torch.from_numpy(np.array(act)).to(device)
 
         # Forward pass
         with torch.no_grad():
@@ -91,7 +89,7 @@ def run_maes(
                 }
 
             candidate_scores = feature[mask]
-            
+
             # Map the masked position back to the activation indices
             batch_positions = np.nonzero(mask)[0].astype(np.int64)
 
@@ -112,7 +110,10 @@ def run_maes(
                         top_features[feature_idx]["top_indices"][min_i] = idx
                         top_features[feature_idx]["file"][min_i] = file
 
-            # next_idx += feature.shape[0]
+        # Free GPU memory
+        del xb, code
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
 
     # Save top_features to disk efficiently
     output_dir = os.path.abspath(f"./maes/{layer_name}")
@@ -135,6 +136,4 @@ if __name__ == "__main__":
     num_exemplars_per_feature = 20  # Number of top exemplars to save per feature
     activation_threshold = 0.0  # Threshold for SAE feature activation
 
-    run_maes(
-        layer_name, num_arrays, num_exemplars_per_feature, activation_threshold
-    )  # $$
+    run_maes(layer_name, num_exemplars_per_feature, activation_threshold)  # $$
