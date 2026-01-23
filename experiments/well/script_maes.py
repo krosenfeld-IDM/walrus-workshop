@@ -62,7 +62,7 @@ def run_maes(
     logger.info(f"Processing {len(files)} test files to find MAEs...")
     for file_idx, file in enumerate(alive_it(files)):
         # Load the activations
-        act =  zarr.open(file, mode="r")
+        act =  zarr.open(str(file), mode="r")
 
         # Move to device
         xb = torch.from_numpy(np.array(act)).to(device)
@@ -120,7 +120,7 @@ def run_maes(
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(
         output_dir,
-        f"top_features_{layer_name}_num{num_arrays}_k{num_exemplars_per_feature}.pkl.gz",
+        f"top_features_{layer_name}_k{num_exemplars_per_feature}.pkl.gz",
     )
 
     logger.info(f"Saving top_features to {output_path}...")
@@ -132,7 +132,6 @@ def run_maes(
 
 if __name__ == "__main__":
     layer_name = "blocks.20.space_mixing.activation"
-    num_arrays = 180
     num_exemplars_per_feature = 20  # Number of top exemplars to save per feature
     activation_threshold = 0.0  # Threshold for SAE feature activation
 
