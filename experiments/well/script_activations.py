@@ -5,15 +5,17 @@ Save activations from a specific layer of the model for later analysis.
 
 import os
 import logging
-from omegaconf import OmegaConf
 
 import torch
+import numpy as np
+
 from walrus.data.well_to_multi_transformer import ChannelsFirstWithTimeFormatter
 from hydra.utils import instantiate
 from einops import rearrange, repeat
 from alive_progress import alive_it
 from the_well.data import WellDataset
 from pathlib import Path
+from omegaconf import OmegaConf
 
 from walrus_workshop.activation import ActivationManager
 from walrus_workshop import paths
@@ -136,11 +138,14 @@ for trajectory_index in alive_it(range(num_trajectories)):
     else:
         mask = None
 
-    for t_start in range(
-        0, batch["input_fields"].shape[1] - 6, 6
+    rng = np.random.default_rng()
+    for t_start_ in range(
+        0, 101, 3 # batch["input_fields"].sahpe[1] - -3
     ):  # TODO: Read this from the config
+        t_start = t_start_ + rng.integers(3)
+        t_start = int(np.min([t_start, batch["input_fields"].shape[1] - 3]))
         logger.debug(
-            f"Processing time step {t_start} / {batch['input_fields'].shape[1] - 6}"
+            f"Processing time step {t_start} / 101"
         )
         with torch.no_grad():
             # inputs, y_ref = formatter.process_input(

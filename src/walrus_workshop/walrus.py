@@ -6,6 +6,7 @@ from typing import Literal
 from itertools import islice
 import numpy as np
 from the_well.data import WellDataset
+from the_well.data.datasets import WellMetadata
 
 from walrus_workshop import paths
 
@@ -87,8 +88,8 @@ def get_trajectory(
     dataset_id: str,
     trajectory_id: int = 0,
     config=None,
-    split: Literal["val", "test", "train"] = "val",
-):
+    split: Literal["val", "test", "train"] = "test",
+) -> tuple[dict, WellMetadata]:
     """
     Get a trajectory from a dataset (e.g., entire numerical simulation)
     Args:
