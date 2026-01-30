@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 from alive_progress import alive_it
 import wandb
+from omegaconf import OmegaConf
 
 from walrus_workshop.utils import load_config
 from walrus_workshop.model import SAE
@@ -100,7 +101,10 @@ def train_sae(
     warmup_steps = int(0.05 * total_steps)  # 5% warmup
 
     warmup_scheduler = optim.lr_scheduler.LambdaLR(
-        optimizer, lr_lambda=lambda step: min(1.0, (step + 1) / warmup_steps) if warmup_steps > 0 else 1.0
+        optimizer,
+        lr_lambda=lambda step: min(1.0, (step + 1) / warmup_steps)
+        if warmup_steps > 0
+        else 1.0,
     )
     cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=max(1, total_steps - warmup_steps)
@@ -197,7 +201,9 @@ def train_sae(
                 if save_every == "epoch":
                     if epoch > 0 and batch_idx == 0:
                         os.makedirs(checkpoint_dir, exist_ok=True)
-                        save_path = f"{checkpoint_dir}/{checkpoint_prefix}_epoch_{epoch}.pt"
+                        save_path = (
+                            f"{checkpoint_dir}/{checkpoint_prefix}_epoch_{epoch}.pt"
+                        )
                         save_sae(save_path=save_path, cfg=sae_cfg, model=sae_model)
                 else:
                     global_step = epoch * batches_per_epoch + batch_idx
@@ -250,21 +256,21 @@ def save_sae(save_path, cfg=None, model=None):
 
 
 def train_walrus(
+    config,
     layer_name: str,
     num_arrays: int | None = None,
     num_workers: int | None = None,
     save: bool = False,
     config_path: str | Path | None = None,
 ):
-    # Load configuration from YAML
-    config = load_config(config_path)
+    # # Load configuration from YAML
+    # config = load_config(config_path)
 
     # Extract configuration sections
     model_cfg = config.get("model", {})
     training_cfg = config.get("training", {})
     wandb_cfg_dict = config.get("wandb", {})
     walrus_cfg = config.get("walrus", {})
-
 
     # Split into train/test using reproducible split=
     datasets = ActivationsDataSet(
@@ -280,7 +286,7 @@ def train_walrus(
     if num_arrays is None:
         num_arrays = walrus_cfg.get("num_arrays", len(train_files))
     if num_workers is None:
-        num_workers = walrus_cfg.get("num_workers", 4)    
+        num_workers = walrus_cfg.num_workers
 
     # Limit to num_arrays (already set from config or defaults to len(train_files))
     train_files = train_files[:num_arrays]
@@ -297,8 +303,7 @@ def train_walrus(
     wandb_run_name = wandb_cfg_dict.get("wandb_run_name", None)
     if wandb_run_name is None:
         wandb_run_name = (
-            f"num_arrays={num_arrays}, k_active={model_cfg.get('k_active', 128)}, "
-            f"k_aux={model_cfg.get('k_aux', 512)}, latent={model_cfg.get('latent', datasets.d_in) * model_cfg.get('expansion_factor', 32)}"
+            f"k_active={model_cfg.k_active}, k_aux={model_cfg.k_aux}, latent={datasets.d_in * model_cfg.expansion_factor}"
         )
 
     wandb_cfg = {
@@ -320,8 +325,8 @@ def train_walrus(
     )
 
     # Train
-    lr = training_cfg.get("learning_rate", 3e-4)
-    epochs = walrus_cfg.get("epochs", training_cfg.get("epochs", 5))
+    lr = training_cfg.learning_rate
+    epochs = walrus_cfg.epochs
 
     # Periodic checkpoint saving configuration
     save_every = training_cfg.get("save_every", "epoch")
@@ -354,8 +359,14 @@ def train_walrus(
 
 
 if __name__ == "__main__":
+    # Work from this directory
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    this_dir = Path(__file__).parent
+    config = OmegaConf.load(this_dir / "configs" / "train.yaml")
 
     for layer_number in [20]:
         layer_name = f"blocks.{layer_number}.space_mixing.activation"
-        trained_model, cfg = train_walrus(layer_name, num_arrays=None, save=True)
+        trained_model, cfg = train_walrus(
+            config, layer_name, num_arrays=None, save=True
+        )
