@@ -366,7 +366,7 @@ class SAE(nn.Module):
     @torch.no_grad()
     def update_dead_mask(self, code: torch.Tensor, batch_size: int) -> None:
         """
-        Update dead neuron tracking based on current batch activations.
+        Update dead neuron tracking.
 
         This method should be called after each forward pass during training to
         track which latent dimensions are inactive. Neurons that remain inactive
