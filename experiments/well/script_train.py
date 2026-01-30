@@ -182,6 +182,7 @@ def train_sae(
                         "train/mse_loss": mse_loss.item(),
                         "train/aux_loss": aux_loss.item(),
                         "train/dead_neurons": sae_model.dead_mask.sum().item(),
+                        "train/fraction_alive": (~sae_model.dead_mask).float().mean().item(),
                         "train/learning_rate": current_lr,
                         "epoch": epoch,
                         "batch": batch_idx,
@@ -226,6 +227,7 @@ def train_sae(
                     "epoch/avg_mse_loss": avg_mse,
                     "epoch/avg_aux_loss": avg_aux,
                     "epoch/dead_neurons": sae_model.dead_mask.sum().item(),
+                    "epoch/fraction_alive": (~sae_model.dead_mask).float().mean().item(),
                     "epoch/learning_rate": scheduler.get_last_lr()[0],
                     "epoch": epoch + 1,
                 }
@@ -326,7 +328,7 @@ def train_walrus(
 
     # Train
     lr = training_cfg.learning_rate
-    epochs = walrus_cfg.epochs
+    epochs = training_cfg.epochs
 
     # Periodic checkpoint saving configuration
     save_every = training_cfg.get("save_every", "epoch")
