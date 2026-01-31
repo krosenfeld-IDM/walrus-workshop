@@ -272,6 +272,8 @@ class SAE(nn.Module):
         # --- Dead neuron tracking ---
         self.register_buffer("miss_counts", torch.zeros(latent, dtype=torch.long))
         self.register_buffer("dead_mask", torch.zeros(latent, dtype=torch.bool))
+        self.register_buffer("activation_counts", torch.zeros(latent, dtype=torch.long))
+
 
         # --- OpenAI-style initialization ---
         with torch.no_grad():
@@ -338,7 +340,7 @@ class SAE(nn.Module):
 
         # ---- Encode ----
         code_pre = torch.relu(self.enc(x_bar))
-        code = topk(code_pre, self.k)
+        code = topk(code_pre, self.k) # (B, latent)
 
         # ---- Decode and add shared bias back ----
         if self.unit_norm_decoder:
@@ -360,6 +362,9 @@ class SAE(nn.Module):
             )
         else:
             aux_recon = torch.zeros_like(x)
+
+        # --- Keep track of how often features appear in top-k for this batch ---
+        self.activation_counts += (code > 0).sum(dim=0)
 
         return recon, code, aux_recon
 

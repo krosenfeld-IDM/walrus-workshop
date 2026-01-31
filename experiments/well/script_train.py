@@ -3,21 +3,19 @@ Train TopK SAE on activations
 """
 
 import os
-import glob
 import logging
 import sys
+import torch
+
+from datetime import datetime
 from pathlib import Path
 
-import numpy as np
-import torch
-from torch.utils.data import DataLoader
 import torch.optim as optim
 from alive_progress import alive_it
 import wandb
+from omegaconf import OmegaConf
 
-from walrus_workshop.utils import load_config
 from walrus_workshop.model import SAE
-from walrus_workshop.data import LazyZarrDataset
 from walrus_workshop.activation import ActivationsDataSet
 
 # Setup logger with handler to output to terminal
@@ -43,6 +41,7 @@ def train_sae(
     total_samples,
     batches_per_epoch,
     lr=3e-4,
+    beta=1/32,
     epochs=10,
     device="cuda",
     wandb_cfg=None,
@@ -100,7 +99,10 @@ def train_sae(
     warmup_steps = int(0.05 * total_steps)  # 5% warmup
 
     warmup_scheduler = optim.lr_scheduler.LambdaLR(
-        optimizer, lr_lambda=lambda step: min(1.0, (step + 1) / warmup_steps) if warmup_steps > 0 else 1.0
+        optimizer,
+        lr_lambda=lambda step: min(1.0, (step + 1) / warmup_steps)
+        if warmup_steps > 0
+        else 1.0,
     )
     cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=max(1, total_steps - warmup_steps)
@@ -109,8 +111,6 @@ def train_sae(
         optimizer, [warmup_scheduler, cosine_scheduler], milestones=[warmup_steps]
     )
 
-    print(f"Starting training on {total_samples} samples...")
-
     for epoch in range(epochs):
         sae_model.train()
         total_loss = 0
@@ -118,12 +118,12 @@ def train_sae(
         total_aux = 0
 
         for batch_idx, x in enumerate(alive_it(dataloader, total=batches_per_epoch)):
-            x = x.to(device)
+            x = x.to(device) # B A : 6144 x 2816 where B is number of tokens
 
             # --- Forward Pass ---
             # recon: Main reconstruction
             # code: Latent activations
-            # aux_recon: Reconstruction from dead neurons
+            # aux_recon: Reconstruction from dead neurons (auxK)
             recon, code, aux_recon = sae_model(x)
 
             # --- Loss Calculation ---
@@ -144,7 +144,7 @@ def train_sae(
             # We want dead neurons (aux_recon) to predict the RESIDUAL (x - recon).
             # We detach the residual target so aux loss doesn't affect the main decoder.
             residual = (x_normed - recon).detach()
-            aux_loss = (aux_recon - residual).pow(2).sum(dim=-1).mean()
+            aux_loss = beta * (aux_recon - residual).pow(2).sum(dim=-1).mean()
 
             # Combine
             loss = mse_loss + aux_loss
@@ -170,7 +170,7 @@ def train_sae(
             total_aux += aux_loss.item()
 
             # Wandb logging (every 100 batches to avoid too much logging)
-            if use_wandb and batch_idx % 100 == 0:
+            if use_wandb and batch_idx % 20 == 0:
                 current_lr = scheduler.get_last_lr()[0]
                 wandb.log(
                     {
@@ -178,6 +178,7 @@ def train_sae(
                         "train/mse_loss": mse_loss.item(),
                         "train/aux_loss": aux_loss.item(),
                         "train/dead_neurons": sae_model.dead_mask.sum().item(),
+                        "train/fraction_alive": (~sae_model.dead_mask).float().mean().item(),
                         "train/learning_rate": current_lr,
                         "epoch": epoch,
                         "batch": batch_idx,
@@ -197,7 +198,9 @@ def train_sae(
                 if save_every == "epoch":
                     if epoch > 0 and batch_idx == 0:
                         os.makedirs(checkpoint_dir, exist_ok=True)
-                        save_path = f"{checkpoint_dir}/{checkpoint_prefix}_epoch_{epoch}.pt"
+                        save_path = (
+                            f"{checkpoint_dir}/{checkpoint_prefix}_epoch_{epoch}.pt"
+                        )
                         save_sae(save_path=save_path, cfg=sae_cfg, model=sae_model)
                 else:
                     global_step = epoch * batches_per_epoch + batch_idx
@@ -209,21 +212,6 @@ def train_sae(
         # Use actual batch count for averaging (batch_idx is 0-indexed, so add 1)
         actual_batches = batch_idx + 1
         avg_loss = total_loss / actual_batches
-        avg_mse = total_mse / actual_batches
-        avg_aux = total_aux / actual_batches
-
-        # Log epoch-level metrics to wandb
-        if use_wandb:
-            wandb.log(
-                {
-                    "epoch/avg_loss": avg_loss,
-                    "epoch/avg_mse_loss": avg_mse,
-                    "epoch/avg_aux_loss": avg_aux,
-                    "epoch/dead_neurons": sae_model.dead_mask.sum().item(),
-                    "epoch/learning_rate": scheduler.get_last_lr()[0],
-                    "epoch": epoch + 1,
-                }
-            )
 
         logger.info(f"=== Epoch {epoch + 1} Finished. Avg Loss: {avg_loss:.5f} ===")
 
@@ -250,21 +238,21 @@ def save_sae(save_path, cfg=None, model=None):
 
 
 def train_walrus(
+    config,
     layer_name: str,
     num_arrays: int | None = None,
     num_workers: int | None = None,
     save: bool = False,
     config_path: str | Path | None = None,
 ):
-    # Load configuration from YAML
-    config = load_config(config_path)
+    # # Load configuration from YAML
+    # config = load_config(config_path)
 
     # Extract configuration sections
     model_cfg = config.get("model", {})
     training_cfg = config.get("training", {})
     wandb_cfg_dict = config.get("wandb", {})
     walrus_cfg = config.get("walrus", {})
-
 
     # Split into train/test using reproducible split=
     datasets = ActivationsDataSet(
@@ -280,7 +268,7 @@ def train_walrus(
     if num_arrays is None:
         num_arrays = walrus_cfg.get("num_arrays", len(train_files))
     if num_workers is None:
-        num_workers = walrus_cfg.get("num_workers", 4)    
+        num_workers = walrus_cfg.num_workers
 
     # Limit to num_arrays (already set from config or defaults to len(train_files))
     train_files = train_files[:num_arrays]
@@ -297,8 +285,7 @@ def train_walrus(
     wandb_run_name = wandb_cfg_dict.get("wandb_run_name", None)
     if wandb_run_name is None:
         wandb_run_name = (
-            f"num_arrays={num_arrays}, k_active={model_cfg.get('k_active', 128)}, "
-            f"k_aux={model_cfg.get('k_aux', 512)}, latent={model_cfg.get('latent', datasets.d_in) * model_cfg.get('expansion_factor', 32)}"
+            f"k_active={model_cfg.k_active}, k_aux={model_cfg.k_aux}, latent={datasets.d_in * model_cfg.expansion_factor}, beta={training_cfg.beta}, time={datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
         )
 
     wandb_cfg = {
@@ -319,23 +306,21 @@ def train_walrus(
         **sae_cfg,
     )
 
-    # Train
-    lr = training_cfg.get("learning_rate", 3e-4)
-    epochs = walrus_cfg.get("epochs", training_cfg.get("epochs", 5))
-
     # Periodic checkpoint saving configuration
     save_every = training_cfg.get("save_every", "epoch")
     if save_every == 0:
         save_every = None  # Disable periodic saving
     checkpoint_prefix = f"sae_checkpoint_{layer_name}_source_{training_cfg.get('source_split', 'train')}"
 
+    # Train
     trained_model = train_sae(
         model,
         dataloader,
         total_samples=dataloader.dataset.total_samples,
         batches_per_epoch=dataloader.dataset.total_batches,
-        lr=lr,
-        epochs=epochs,
+        lr=training_cfg.learning_rate,
+        beta=training_cfg.beta,
+        epochs=training_cfg.epochs,
         device=device,
         wandb_cfg=wandb_cfg,
         save_every=save_every,
@@ -346,7 +331,7 @@ def train_walrus(
     if save:
         os.makedirs("./checkpoints", exist_ok=True)
         save_sae(
-            save_path=f"./checkpoints/sae_checkpoint_{layer_name}_source_{training_cfg.get('source_split', 'train')}.pt",
+            save_path=f"./checkpoints/sae_checkpoint_{layer_name}_source_{training_cfg.get('source_split', 'train')}_k_active={model_cfg.k_active}_k_aux={model_cfg.k_aux}_latent={datasets.d_in * model_cfg.expansion_factor}_beta={training_cfg.beta}.pt",
             cfg=trained_model.get_config(),
             model=trained_model,
         )
@@ -354,8 +339,14 @@ def train_walrus(
 
 
 if __name__ == "__main__":
+    # Work from this directory
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    this_dir = Path(__file__).parent
+    config = OmegaConf.load(this_dir / "configs" / "train.yaml")
 
     for layer_number in [20]:
         layer_name = f"blocks.{layer_number}.space_mixing.activation"
-        trained_model, cfg = train_walrus(layer_name, num_arrays=None, save=True)
+        trained_model, cfg = train_walrus(
+            config, layer_name, num_arrays=None, save=True
+        )

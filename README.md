@@ -40,3 +40,6 @@ The majority of the scripts are in `experiments/well`.
 - [Walrus code](https://github.com/PolymathicAI/walrus)
 - [Steering code](https://github.com/DJ-Fear/walrus_steering)
 - Graphcast interpretability ([paper](https://arxiv.org/abs/2512.24440))([github](https://github.com/theodoremacmillan/graphcast-interpretability))([graphcase-sae](https://github.com/theodoremacmillan/graphcast/tree/sae-hooks))
+
+## Project Notes
+- Layers have 2816 activations
