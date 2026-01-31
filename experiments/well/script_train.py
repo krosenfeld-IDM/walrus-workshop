@@ -212,22 +212,6 @@ def train_sae(
         # Use actual batch count for averaging (batch_idx is 0-indexed, so add 1)
         actual_batches = batch_idx + 1
         avg_loss = total_loss / actual_batches
-        # avg_mse = total_mse / actual_batches
-        # avg_aux = total_aux / actual_batches
-
-        # # Log epoch-level metrics to wandb
-        # if use_wandb:
-        #     wandb.log(
-        #         {
-        #             "epoch/avg_loss": avg_loss,
-        #             "epoch/avg_mse_loss": avg_mse,
-        #             "epoch/avg_aux_loss": avg_aux,
-        #             "epoch/dead_neurons": sae_model.dead_mask.sum().item(),
-        #             "epoch/fraction_alive": (~sae_model.dead_mask).float().mean().item(),
-        #             "epoch/learning_rate": scheduler.get_last_lr()[0],
-        #             "epoch": epoch + 1,
-        #         }
-        #     )
 
         logger.info(f"=== Epoch {epoch + 1} Finished. Avg Loss: {avg_loss:.5f} ===")
 
@@ -301,7 +285,7 @@ def train_walrus(
     wandb_run_name = wandb_cfg_dict.get("wandb_run_name", None)
     if wandb_run_name is None:
         wandb_run_name = (
-            f"k_active={model_cfg.k_active}, k_aux={model_cfg.k_aux}, latent={datasets.d_in * model_cfg.expansion_factor}, time={datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+            f"k_active={model_cfg.k_active}, k_aux={model_cfg.k_aux}, latent={datasets.d_in * model_cfg.expansion_factor}, beta={training_cfg.beta}, time={datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
         )
 
     wandb_cfg = {
@@ -347,7 +331,7 @@ def train_walrus(
     if save:
         os.makedirs("./checkpoints", exist_ok=True)
         save_sae(
-            save_path=f"./checkpoints/sae_checkpoint_{layer_name}_source_{training_cfg.get('source_split', 'train')}.pt",
+            save_path=f"./checkpoints/sae_checkpoint_{layer_name}_source_{training_cfg.get('source_split', 'train')}_k_active={model_cfg.k_active}_k_aux={model_cfg.k_aux}_latent={datasets.d_in * model_cfg.expansion_factor}_beta={training_cfg.beta}.pt",
             cfg=trained_model.get_config(),
             model=trained_model,
         )
