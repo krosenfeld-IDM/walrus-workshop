@@ -4,14 +4,15 @@
 model:
   expansion_factor: 8  # Multiplier for latent dimension (latent = d_in * expansion_factor)
   k_active: 32  # Number of active neurons
-  k_aux: 512  # Number of auxiliary neurons
+  k_aux: 2048  # Number of auxiliary neurons (512 in paper)
   dead_window: 5_000_000  # Window for dead neuron tracking
 
 # Training hyperparameters
 training:
   split: "train"
-  batch_size: 8192
+  batch_size: 6144
   learning_rate: 0.0003  # 3e-4
+  beta: 0.1 # 1/32 in original paper
   epochs: 5
   source_split: "test"
   save_every: "epoch"
@@ -19,7 +20,7 @@ training:
 # Wandb configuration
 wandb:
   use_wandb: true
-  wandb_project: "walrus-workshop"  # Base project name (can be overridden with layer_name)
+  wandb_project: "walrus-workshop-feature-collapse"  # Base project name (can be overridden with layer_name)
   wandb_run_name: null  # null will auto-generate a name
 
 # Walrus-specific settings (for train_walrus)
