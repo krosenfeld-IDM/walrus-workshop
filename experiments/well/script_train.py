@@ -3,22 +3,19 @@ Train TopK SAE on activations
 """
 
 import os
-import glob
 import logging
 import sys
+import torch
+
+from datetime import datetime
 from pathlib import Path
 
-import numpy as np
-import torch
-from torch.utils.data import DataLoader
 import torch.optim as optim
 from alive_progress import alive_it
 import wandb
 from omegaconf import OmegaConf
 
-from walrus_workshop.utils import load_config
 from walrus_workshop.model import SAE
-from walrus_workshop.data import LazyZarrDataset
 from walrus_workshop.activation import ActivationsDataSet
 
 # Setup logger with handler to output to terminal
@@ -43,8 +40,8 @@ def train_sae(
     dataloader,
     total_samples,
     batches_per_epoch,
-    beta=1/32,
     lr=3e-4,
+    beta=1/32,
     epochs=10,
     device="cuda",
     wandb_cfg=None,
@@ -114,8 +111,6 @@ def train_sae(
         optimizer, [warmup_scheduler, cosine_scheduler], milestones=[warmup_steps]
     )
 
-    print(f"Starting training on {total_samples} samples...")
-
     for epoch in range(epochs):
         sae_model.train()
         total_loss = 0
@@ -175,7 +170,7 @@ def train_sae(
             total_aux += aux_loss.item()
 
             # Wandb logging (every 100 batches to avoid too much logging)
-            if use_wandb and batch_idx % 100 == 0:
+            if use_wandb and batch_idx % 20 == 0:
                 current_lr = scheduler.get_last_lr()[0]
                 wandb.log(
                     {
@@ -217,22 +212,22 @@ def train_sae(
         # Use actual batch count for averaging (batch_idx is 0-indexed, so add 1)
         actual_batches = batch_idx + 1
         avg_loss = total_loss / actual_batches
-        avg_mse = total_mse / actual_batches
-        avg_aux = total_aux / actual_batches
+        # avg_mse = total_mse / actual_batches
+        # avg_aux = total_aux / actual_batches
 
-        # Log epoch-level metrics to wandb
-        if use_wandb:
-            wandb.log(
-                {
-                    "epoch/avg_loss": avg_loss,
-                    "epoch/avg_mse_loss": avg_mse,
-                    "epoch/avg_aux_loss": avg_aux,
-                    "epoch/dead_neurons": sae_model.dead_mask.sum().item(),
-                    "epoch/fraction_alive": (~sae_model.dead_mask).float().mean().item(),
-                    "epoch/learning_rate": scheduler.get_last_lr()[0],
-                    "epoch": epoch + 1,
-                }
-            )
+        # # Log epoch-level metrics to wandb
+        # if use_wandb:
+        #     wandb.log(
+        #         {
+        #             "epoch/avg_loss": avg_loss,
+        #             "epoch/avg_mse_loss": avg_mse,
+        #             "epoch/avg_aux_loss": avg_aux,
+        #             "epoch/dead_neurons": sae_model.dead_mask.sum().item(),
+        #             "epoch/fraction_alive": (~sae_model.dead_mask).float().mean().item(),
+        #             "epoch/learning_rate": scheduler.get_last_lr()[0],
+        #             "epoch": epoch + 1,
+        #         }
+        #     )
 
         logger.info(f"=== Epoch {epoch + 1} Finished. Avg Loss: {avg_loss:.5f} ===")
 
@@ -306,7 +301,7 @@ def train_walrus(
     wandb_run_name = wandb_cfg_dict.get("wandb_run_name", None)
     if wandb_run_name is None:
         wandb_run_name = (
-            f"k_active={model_cfg.k_active}, k_aux={model_cfg.k_aux}, latent={datasets.d_in * model_cfg.expansion_factor}"
+            f"k_active={model_cfg.k_active}, k_aux={model_cfg.k_aux}, latent={datasets.d_in * model_cfg.expansion_factor}, time={datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
         )
 
     wandb_cfg = {
@@ -327,23 +322,21 @@ def train_walrus(
         **sae_cfg,
     )
 
-    # Train
-    lr = training_cfg.learning_rate
-    epochs = training_cfg.epochs
-
     # Periodic checkpoint saving configuration
     save_every = training_cfg.get("save_every", "epoch")
     if save_every == 0:
         save_every = None  # Disable periodic saving
     checkpoint_prefix = f"sae_checkpoint_{layer_name}_source_{training_cfg.get('source_split', 'train')}"
 
+    # Train
     trained_model = train_sae(
         model,
         dataloader,
         total_samples=dataloader.dataset.total_samples,
         batches_per_epoch=dataloader.dataset.total_batches,
-        lr=lr,
-        epochs=epochs,
+        lr=training_cfg.learning_rate,
+        beta=training_cfg.beta,
+        epochs=training_cfg.epochs,
         device=device,
         wandb_cfg=wandb_cfg,
         save_every=save_every,
