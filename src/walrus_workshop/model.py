@@ -270,10 +270,10 @@ class SAE(nn.Module):
         self.eps = 1e-8
 
         # --- Dead neuron tracking ---
-        # self.register_buffer("miss_counts", torch.zeros(latent, dtype=torch.long))
+        self.register_buffer("miss_counts", torch.zeros(latent, dtype=torch.long))
+        self.register_buffer("dead_mask", torch.zeros(latent, dtype=torch.bool))
+        # self.register_buffer("miss_counts", (self.dead_window+1) * torch.ones(latent, dtype=torch.long))
         # self.register_buffer("dead_mask", torch.zeros(latent, dtype=torch.bool))
-        self.register_buffer("miss_counts", self.dead_window * torch.ones(latent, dtype=torch.long))
-        self.register_buffer("dead_mask", torch.ones(latent, dtype=torch.bool))
 
         # --- OpenAI-style initialization ---
         with torch.no_grad():
