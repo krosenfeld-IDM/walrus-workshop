@@ -43,6 +43,7 @@ def train_sae(
     dataloader,
     total_samples,
     batches_per_epoch,
+    beta=1/32,
     lr=3e-4,
     epochs=10,
     device="cuda",
@@ -122,12 +123,12 @@ def train_sae(
         total_aux = 0
 
         for batch_idx, x in enumerate(alive_it(dataloader, total=batches_per_epoch)):
-            x = x.to(device)
+            x = x.to(device) # B A : 6144 x 2816 where B is number of tokens
 
             # --- Forward Pass ---
             # recon: Main reconstruction
             # code: Latent activations
-            # aux_recon: Reconstruction from dead neurons
+            # aux_recon: Reconstruction from dead neurons (auxK)
             recon, code, aux_recon = sae_model(x)
 
             # --- Loss Calculation ---
@@ -148,7 +149,7 @@ def train_sae(
             # We want dead neurons (aux_recon) to predict the RESIDUAL (x - recon).
             # We detach the residual target so aux loss doesn't affect the main decoder.
             residual = (x_normed - recon).detach()
-            aux_loss = (aux_recon - residual).pow(2).sum(dim=-1).mean()
+            aux_loss = beta * (aux_recon - residual).pow(2).sum(dim=-1).mean()
 
             # Combine
             loss = mse_loss + aux_loss
