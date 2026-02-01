@@ -268,7 +268,7 @@ def train_walrus(
     if num_arrays is None:
         num_arrays = walrus_cfg.get("num_arrays", len(train_files))
     if num_workers is None:
-        num_workers = walrus_cfg.num_workers
+        num_workers = training_cfg.num_workers
 
     # Limit to num_arrays (already set from config or defaults to len(train_files))
     train_files = train_files[:num_arrays]
