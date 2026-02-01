@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from alive_progress import alive_it
 from dataclasses import dataclass
+from omegaconf import OmegaConf
 
 from walrus_workshop.model import load_sae
 from walrus_workshop.activation import ActivationsDataSet
@@ -45,7 +46,8 @@ def collect_exemplars(
     dataloader,
     top_activations,
     num_exemplars: int,
-    device: str
+    device: str,
+    max_batches: int = 3,
 ) -> dict[int, dict[str, np.ndarray]]:
     """
     Collect top-k exemplars for each feature based on activation strength.
@@ -77,10 +79,10 @@ def collect_exemplars(
         recon, code, aux_recon = sae_model(x)
         
         # Get activations for all tracked features at once: (B, num_features)
-        batch_activations = code[:, feature_indices].cpu().numpy()
+        batch_activations = code[:, feature_indices].detach().cpu().numpy()
         
         for i, feature_idx in enumerate(feature_indices):
-            feature_acts = batch_activations[:, i]
+            feature_acts = batch_activations[:, i]  
             
             # Find top-k candidates in this batch using argpartition (O(n) vs O(n log n))
             if len(feature_acts) <= num_exemplars:
@@ -100,6 +102,9 @@ def collect_exemplars(
                     heapq.heappush(heap, exemplar)
                 elif activation > heap[0].activation:
                     heapq.heapreplace(heap, exemplar)
+
+        if batch_idx >= max_batches:
+            break
     
     # Convert heaps to final format (sorted descending by activation)
     exemplars = {}
@@ -113,8 +118,10 @@ def collect_exemplars(
     
     return exemplars
 
-@hydra.main(config_path="configs", config_name="train.yaml")
-def main(cfg):
+# @hydra.main(config_path="configs", config_name="train.yaml")
+def main():
+
+    cfg = OmegaConf.load(this_dir / "configs" / "train.yaml")
     # Load the trained SAE
     checkpoint_path = (
         this_dir
@@ -152,7 +159,7 @@ def main(cfg):
     with open(this_dir / "exemplars" / "exemplars.pkl", "wb") as f:
         pickle.dump(exemplars, f)
 
-    print("pause")
+    print("done")
 
 if __name__ == "__main__":
     main()
