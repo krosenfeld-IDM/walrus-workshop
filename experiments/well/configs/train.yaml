@@ -30,6 +30,7 @@ walrus:
   layer_name: "blocks.20.space_mixing.activation"
   # num_workers: 4
   random_state: 42  # For train/test split
+  n_steps_input: 6 # Number of input steps (from data.module_parameters in well_config.yaml)
 
 # 
 analysis:

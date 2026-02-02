@@ -117,8 +117,8 @@ def train_sae(
         total_mse = 0
         total_aux = 0
 
-        for batch_idx, x in enumerate(alive_it(dataloader, total=batches_per_epoch)):
-            x = x.to(device) # B A : 6144 x 2816 where B is number of tokens
+        for batch_idx, (x, _file_path, _indices) in enumerate(alive_it(dataloader, total=batches_per_epoch)):
+            x = x.to(device)  # B x d_in
 
             # --- Forward Pass ---
             # recon: Main reconstruction

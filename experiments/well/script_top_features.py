@@ -31,11 +31,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 @dataclass
 class Exemplar:
-    """Single exemplar with its activation, position in batch, and batch ID."""
+    """Single exemplar with its activation and source location."""
     activation: float
-    index: int
-    batch_id: int
-    
+    file_index: int  # Original index within the source file
+    file_path: str   # Path to the source file
+
     def __lt__(self, other):
         # For min-heap: lower activation = lower priority
         return self.activation < other.activation
@@ -47,43 +47,45 @@ def collect_exemplars(
     top_activations,
     num_exemplars: int,
     device: str,
-    max_batches: int = 3,
+    max_batches: int | None = None,
 ) -> dict[int, dict[str, np.ndarray]]:
     """
     Collect top-k exemplars for each feature based on activation strength.
-    
+
     Uses a min-heap per feature to efficiently track the top activations
     across all batches without storing everything in memory.
-    
+
     Args:
         sae_model: The sparse autoencoder model
-        dataloader: DataLoader yielding batches of tokens
+        dataloader: DataLoader yielding (data, file_path, original_indices) tuples
         top_activations: Object with .indices attribute containing feature indices
         num_exemplars: Number of top exemplars to keep per feature
         device: Device to run computations on
-        
+        max_batches: Optional limit on number of batches to process
+
     Returns:
-        Dictionary mapping feature_idx -> {activations, indices, batch_ids}
+        Dictionary mapping feature_idx -> {activations, file_indices, file_paths}
     """
     feature_indices = top_activations.indices.cpu().numpy()
-    
+
     # Min-heap per feature (stores Exemplar objects)
     heaps: dict[int, list[Exemplar]] = {idx: [] for idx in feature_indices}
-    
-    for batch_idx, x in enumerate(
+
+    for batch_idx, (x, file_path, original_indices) in enumerate(
         alive_it(dataloader, total=dataloader.dataset.total_batches)
     ):
         x = x.to(device)
-        
+        original_indices = np.asarray(original_indices)
+
         # Forward pass
         recon, code, aux_recon = sae_model(x)
-        
+
         # Get activations for all tracked features at once: (B, num_features)
         batch_activations = code[:, feature_indices].detach().cpu().numpy()
-        
+
         for i, feature_idx in enumerate(feature_indices):
-            feature_acts = batch_activations[:, i]  
-            
+            feature_acts = batch_activations[:, i]
+
             # Find top-k candidates in this batch using argpartition (O(n) vs O(n log n))
             if len(feature_acts) <= num_exemplars:
                 top_k_batch_indices = np.arange(len(feature_acts))
@@ -91,31 +93,33 @@ def collect_exemplars(
                 top_k_batch_indices = np.argpartition(
                     feature_acts, -num_exemplars
                 )[-num_exemplars:]
-            
+
             heap = heaps[feature_idx]
-            
+
             for batch_pos in top_k_batch_indices:
                 activation = feature_acts[batch_pos]
-                exemplar = Exemplar(activation, int(batch_pos), batch_idx)
-                
+                # Use the original index within the file, not the batch position
+                file_index = int(original_indices[batch_pos])
+                exemplar = Exemplar(activation, file_index, file_path)
+
                 if len(heap) < num_exemplars:
                     heapq.heappush(heap, exemplar)
                 elif activation > heap[0].activation:
                     heapq.heapreplace(heap, exemplar)
 
-        if batch_idx >= max_batches:
+        if max_batches is not None and batch_idx >= max_batches:
             break
-    
+
     # Convert heaps to final format (sorted descending by activation)
     exemplars = {}
     for feature_idx in feature_indices:
         sorted_exemplars = sorted(heaps[feature_idx], reverse=True)
         exemplars[feature_idx] = {
             "activations": np.array([e.activation for e in sorted_exemplars]),
-            "indices": np.array([e.index for e in sorted_exemplars]),
-            "batch_ids": np.array([e.batch_id for e in sorted_exemplars]),
+            "file_indices": np.array([e.file_index for e in sorted_exemplars]),
+            "file_paths": np.array([e.file_path for e in sorted_exemplars]),
         }
-    
+
     return exemplars
 
 # @hydra.main(config_path="configs", config_name="train.yaml")
