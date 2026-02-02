@@ -111,13 +111,14 @@ def collect_activations(cfg, trajectory_id: int, top_k: int = 20, max_loops: int
         token_indices = step_number * 32 * 32 + np.arange(code.shape[0])
         for i, token_index in enumerate(token_indices):
             heap = heaps[token_index]
-            activations = code[:, token_index].detach().cpu().numpy()
-            dEdT = 0 # TODO: compute dEdT
-            for activation in activations:
-                if len(heap) < top_k:
-                    heapq.heappush(heap, Feature(activation, i, dEdT))
-                elif activation > heap[0].activation:
-                    heapq.heapreplace(heap, Feature(activation, i, dEdT))
+            features = code[i, :].detach().cpu().numpy()  # Features for token i
+            dEdT = 0  # TODO: compute dEdT
+            for feature_idx, activation in enumerate(features):
+                if activation > 0:  # Only consider active features
+                    if len(heap) < top_k:
+                        heapq.heappush(heap, Feature(activation, feature_idx, dEdT))
+                    elif activation > heap[0].activation:
+                        heapq.heapreplace(heap, Feature(activation, feature_idx, dEdT))
         
         if max_loops is not None and loop_cnt >= max_loops:
             break
