@@ -117,8 +117,8 @@ def train_sae(
         total_mse = 0
         total_aux = 0
 
-        for batch_idx, x in enumerate(alive_it(dataloader, total=batches_per_epoch)):
-            x = x.to(device) # B A : 6144 x 2816 where B is number of tokens
+        for batch_idx, (x, _file_path, _indices) in enumerate(alive_it(dataloader, total=batches_per_epoch)):
+            x = x.to(device)  # B x d_in
 
             # --- Forward Pass ---
             # recon: Main reconstruction
@@ -268,7 +268,7 @@ def train_walrus(
     if num_arrays is None:
         num_arrays = walrus_cfg.get("num_arrays", len(train_files))
     if num_workers is None:
-        num_workers = walrus_cfg.num_workers
+        num_workers = training_cfg.num_workers
 
     # Limit to num_arrays (already set from config or defaults to len(train_files))
     train_files = train_files[:num_arrays]

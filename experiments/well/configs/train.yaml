@@ -10,12 +10,13 @@ model:
 # Training hyperparameters
 training:
   split: "train"
-  batch_size: 6144
+  batch_size: 6144 # Use the same size as a single snapshot 6 * 32 * 32
   learning_rate: 0.0003  # 3e-4
   beta: 0.1 # 1/32 in original paper
   epochs: 5
   source_split: "test"
   save_every: "epoch"
+  num_workers: 4
 
 # Wandb configuration
 wandb:
@@ -26,5 +27,13 @@ wandb:
 # Walrus-specific settings (for train_walrus)
 walrus:
   dataset: "shear_flow"
-  num_workers: 4
+  layer_name: "blocks.20.space_mixing.activation"
+  # num_workers: 4
   random_state: 42  # For train/test split
+  n_steps_input: 6 # Number of input steps (from data.module_parameters in well_config.yaml)
+
+# 
+analysis:
+  features:
+    top_k: 50 # number of top features to look at
+    num_exemplars_per_feature: 20 # number of exemplars to save per feature

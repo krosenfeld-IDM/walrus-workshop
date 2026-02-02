@@ -97,6 +97,16 @@ class LazyNumpyDataset(IterableDataset):
 
     Uses numpy's mmap_mode="r" to memory-map files, allowing the OS to page data
     in/out as needed. This keeps RAM usage bounded regardless of total dataset size.
+
+    Yields:
+        Tuple of (data, file_path, original_indices) where:
+            - data: torch.Tensor of shape (batch_size, d_in)
+            - file_path: str path to the source .npy file
+            - original_indices: np.ndarray of indices into the source file
+
+        To retrieve original data for a sample at position i in the batch:
+            arr = np.load(file_path, mmap_mode="r")
+            original_sample = arr[original_indices[i]]
     """
 
     def __init__(self, file_paths, d_in, batch_size=4096, seed=1132026):
@@ -143,7 +153,8 @@ class LazyNumpyDataset(IterableDataset):
                 if len(sel) == 0:
                     break
                 # np.asarray forces a copy from mmap to contiguous array
-                yield torch.from_numpy(np.asarray(X[sel, :])).float()
+                # Yield data, file path, and original indices within the file
+                yield torch.from_numpy(np.asarray(X[sel, :])).float(), md["path"], sel
 
 
 class LazyZarrDataset(IterableDataset):
@@ -152,6 +163,16 @@ class LazyZarrDataset(IterableDataset):
 
     Uses zarr's chunked storage for lazy loading, allowing efficient partial reads.
     Compression reduces disk I/O while chunking enables reading only needed data.
+
+    Yields:
+        Tuple of (data, file_path, original_indices) where:
+            - data: torch.Tensor of shape (batch_size, d_in)
+            - file_path: str path to the source .zarr file
+            - original_indices: np.ndarray of indices into the source file
+
+        To retrieve original data for a sample at position i in the batch:
+            arr = zarr.open(file_path, mode='r')
+            original_sample = arr[original_indices[i]]
     """
 
     def __init__(self, file_paths, d_in, batch_size=4096, seed=1132026):
@@ -203,4 +224,5 @@ class LazyZarrDataset(IterableDataset):
                 sorted_idx = np.argsort(sel)
                 data = np.asarray(arr[sel[sorted_idx]])
                 data = data[np.argsort(sorted_idx)]
-                yield torch.from_numpy(data).float()
+                # Yield data, file path, and original indices within the file
+                yield torch.from_numpy(data).float(), md["path"], sel
