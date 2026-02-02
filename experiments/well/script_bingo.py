@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from alive_progress import alive_it
 
 from script_enstrophy import load_enstrophy_df
+from script_enstrophy import calc_enstrophy
 from walrus_workshop.model import load_sae
 from walrus_workshop.walrus import get_trajectory
 
@@ -75,10 +76,10 @@ def collect_activations(cfg, trajectory_id: int, top_k: int = 20, max_loops: int
     sae_model, sae_config = load_sae(checkpoint_path)
     sae_model = sae_model.to(device).eval()
 
-    # # Load the trajectory
-    # trajectory, trajectory_metadata = get_trajectory(
-    #     cfg.walrus.dataset, trajectory_id=trajectory_id
-    # )
+    # Load the trajectory
+    trajectory, trajectory_metadata = get_trajectory(
+        cfg.walrus.dataset, trajectory_id=trajectory_id
+    )
 
     heaps: dict[int, list[Feature]] = {
         idx: []
@@ -107,12 +108,27 @@ def collect_activations(cfg, trajectory_id: int, top_k: int = 20, max_loops: int
         act = torch.from_numpy(np.array(act)).to(device)
         with torch.no_grad():
             _, code, _ = sae_model(act)
+
+        # Get the simulation chunk
+        simulation_chunk = trajectory['input_fields'][0, step_number:step_number+cfg.walrus.n_steps_input, :, :, 0, :]
+        nx = simulation_chunk.shape[2]
+        ny = simulation_chunk.shape[3]
+        dx = nx // 32
+        dy = ny // 32
+        # Calculate dEdT for each timestep and token of the chunk
+        enstrophy = np.zeros((cfg.walrus.n_steps_input+1, 32, 32))
+        for i_time in range(cfg.walrus.n_steps_input+1):
+            for ix in range(32):
+                for iy in range(32):
+                    token = simulation_chunk[i_time, ix*dx:ix*dx+dx, iy*dy:iy*dy+dy, 0, :]
+                    enstrophy[i_time, ix, iy] = calc_enstrophy(token[0, :, 2], token[0, :, 3])[0]
         
         token_indices = step_number * 32 * 32 + np.arange(code.shape[0])
         for i, token_index in enumerate(token_indices):
             heap = heaps[token_index]
             features = code[i, :].detach().cpu().numpy()  # Features for token i
-            dEdT = 0  # TODO: compute dEdT
+            it,ix,iy = np.unravel_index(i, (cfg.walrus.n_steps_input, 32, 32)) 
+            dEdT = enstrophy[it+1, ix, iy] - enstrophy[it, ix, iy]
             for feature_idx, activation in enumerate(features):
                 if activation > 0:  # Only consider active features
                     if len(heap) < top_k:
