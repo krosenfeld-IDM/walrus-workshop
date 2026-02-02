@@ -6,9 +6,7 @@ import logging
 import torch
 import os
 import heapq
-import hydra
 import numpy as np
-import matplotlib.pyplot as plt
 
 from pathlib import Path
 from alive_progress import alive_it

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from alive_progress import alive_it
 
 from script_enstrophy import load_enstrophy_df
-from script_enstrophy import calc_enstrophy
+from walrus_workshop.metrics import compute_enstrophy
 from walrus_workshop.model import load_sae
 from walrus_workshop.walrus import get_trajectory
 
@@ -98,7 +98,7 @@ def collect_activations(cfg, trajectory_id: int, top_k: int = 20, max_loops: int
         )
     }
 
-    for loop_cnt, act_file in alive_it(enumerate(act_files)):
+    for loop_cnt, act_file in alive_it(enumerate(act_files), total=len(act_files) if max_loops is None else max_loops):
         # Get the step number
         file_name = Path(act_file).stem
         step_number = search_filename(file_name, "step")
@@ -110,23 +110,24 @@ def collect_activations(cfg, trajectory_id: int, top_k: int = 20, max_loops: int
             _, code, _ = sae_model(act)
 
         # Get the simulation chunk
-        simulation_chunk = trajectory['input_fields'][0, step_number:step_number+cfg.walrus.n_steps_input, :, :, 0, :]
-        nx = simulation_chunk.shape[2]
-        ny = simulation_chunk.shape[3]
+        simulation_chunk = trajectory['input_fields'][0, step_number:step_number+cfg.walrus.n_steps_input+1, :, :, 0, :]
+        nx = simulation_chunk.shape[1]
+        ny = simulation_chunk.shape[2]
         dx = nx // 32
         dy = ny // 32
-        # Calculate dEdT for each timestep and token of the chunk
+
+        # Calculate enstrophy for each timestep and token of the chunk
         enstrophy = np.zeros((cfg.walrus.n_steps_input+1, 32, 32))
         for i_time in range(cfg.walrus.n_steps_input+1):
             for ix in range(32):
                 for iy in range(32):
-                    token = simulation_chunk[i_time, ix*dx:ix*dx+dx, iy*dy:iy*dy+dy, 0, :]
-                    enstrophy[i_time, ix, iy] = calc_enstrophy(token[0, :, 2], token[0, :, 3])[0]
+                    token = simulation_chunk[i_time, ix*dx:(ix+1)*dx, iy*dy:dy*(iy+1), :]
+                    enstrophy[i_time, ix, iy] = compute_enstrophy(token[:, :, 2], token[:, :, 3])[0]
         
         token_indices = step_number * 32 * 32 + np.arange(code.shape[0])
         for i, token_index in enumerate(token_indices):
             heap = heaps[token_index]
-            features = code[i, :].detach().cpu().numpy()  # Features for token i
+            features = code[i, :].cpu().numpy()  # Features for token i
             it,ix,iy = np.unravel_index(i, (cfg.walrus.n_steps_input, 32, 32)) 
             dEdT = enstrophy[it+1, ix, iy] - enstrophy[it, ix, iy]
             for feature_idx, activation in enumerate(features):
@@ -136,7 +137,7 @@ def collect_activations(cfg, trajectory_id: int, top_k: int = 20, max_loops: int
                     elif activation > heap[0].activation:
                         heapq.heapreplace(heap, Feature(activation, feature_idx, dEdT))
         
-        if max_loops is not None and loop_cnt >= max_loops:
+        if max_loops is not None and loop_cnt >= max_loops - 1:
             break
 
     activations = {}
@@ -144,6 +145,7 @@ def collect_activations(cfg, trajectory_id: int, top_k: int = 20, max_loops: int
         activations[token_index] = {
             "activations": np.array([feature.activation for feature in heaps[token_index]]),
             "features": np.array([feature.index for feature in heaps[token_index]]),
+            "dEdT": np.array([feature.dEdT for feature in heaps[token_index]]),
         }
     return activations
 
@@ -162,7 +164,8 @@ if __name__ == "__main__":
     )
     top_ids = group[:20]["id"].to_list()
 
-    # #$
-    activations = collect_activations(cfg, top_ids[0], max_loops = 2)
-    with open(f"activations_traj_{top_ids[0]}.pkl", "wb") as f:
-        pickle.dump(activations, f)
+    for top_id in top_ids:
+        activations = collect_activations(cfg, top_id) #, max_loops = 2) #, max_loops = 2)
+        os.makedirs(output_dir := this_dir / "bingo", exist_ok=True)
+        with open(output_dir / f"activations_traj_{top_id}.pkl", "wb") as f:
+            pickle.dump(activations, f)
