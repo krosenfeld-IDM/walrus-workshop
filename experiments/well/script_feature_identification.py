@@ -1,4 +1,5 @@
 import re
+import os
 import zarr
 import glob
 import torch
@@ -14,6 +15,7 @@ from pathlib import Path
 from scipy.ndimage import zoom
 from dataclasses import dataclass, fields
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.backends.backend_pdf import PdfPages
 
 from walrus_workshop.model import load_sae
 from walrus_workshop.walrus import get_trajectory
@@ -95,25 +97,28 @@ def plot_enstrophy_evolution(trajectory, start_step, cfg, substep=0):
     return EnstrophyData(step=step, simulation=simulation_chunk[:-1], enstrophy=enstrophy, dEdt=dEdt, zoom_dEdt=zoom_dEdt)
 
 
-def plot_feature(feature: Feature, enstrophy_data: EnstrophyData, code: np.ndarray):
+def plot_feature(feature: Feature, enstrophy_data: EnstrophyData, code: np.ndarray, title: str = None):
     activations = code[:, feature.index].reshape(-1, 32, 32)
-    fig, axes = plt.subplots(2, 3, figsize=(12, 5))
+    fig, axes = plt.subplots(2, 3, figsize=(12, 6))
     for i in range(activations.shape[0]):
         ax = axes[i // 3, i % 3]
         ax.imshow(activations[i])
         ax.contour(np.arange(512) / 16 - 0.5, np.arange(256) / 8 - 0.5, enstrophy_data.simulation[i, :, :, 0], levels=1, colors="k")
         ax.set_xticks([])
         ax.set_yticks([])
+    if title:
+        fig.suptitle(title, fontsize=12)
     fig.tight_layout()
-    plt.show()
+    return fig
 
-def main(trajectory_id:int, step_index:int):
+def main(trajectory_id:int, step_index:int, features_to_plot  = None):
+
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
     # Load the config
     cfg = OmegaConf.load("configs/train.yaml")
 
     # Load the trajectory
-    trajectory_id = 50
     trajectory, trajectory_metadata = get_trajectory(cfg.walrus.dataset, trajectory_id)
 
     # Load file list of the activations
@@ -149,18 +154,40 @@ def main(trajectory_id:int, step_index:int):
 
     dEdt_thresh = 0.01
     activations_thresh = 0.0
-    enstrophy_mask = enstrophy_data.dEdt < -1*dEdt_thresh # negative
-    bingo_features = SortedKeyList(key=lambda x: x.coverage)
-    for i in code.shape[1]:
-        activations = code[:, i].reshape(-1, 32, 32)
+    enstrophy_mask = enstrophy_data.dEdt < -1*dEdt_thresh # NOTE: negative only
+    if features_to_plot is None:
+        bingo_features = SortedKeyList(key=lambda x: x.coverage)
+    else:
+        bingo_features = SortedKeyList(key=lambda x: x.index)
+    for feature_index in range(code.shape[1]):
+        activations = code[:, feature_index].reshape(-1, 32, 32)
         coverage = np.zeros(enstrophy_data.dEdt.shape[0])
         for i in range(enstrophy_data.dEdt.shape[0]):
             coverage[i] = np.sum(activations[i][enstrophy_mask[i]] > activations_thresh) / np.sum(enstrophy_mask[i])
-        corr = stats.spearmanr(activations.ravel(), enstrophy_data.dEdt.ravel())[0]
-        bingo_features.add(BingoFeature(index=i, coverage=np.mean(coverage), std_coverage=np.std(coverage), corr=corr))
+        c = stats.spearmanr(activations.ravel(), enstrophy_data.dEdt.ravel())[0]
+        bingo_features.add(BingoFeature(index=feature_index, coverage=np.mean(coverage), std_coverage=np.std(coverage), corr=c))
 
-    for cnt, feature in enumerate(bingo_features[::-1]):
-        if cnt == 20:
-            break
-        print(f"Feature {feature.index} has a mean coverage of {feature.coverage:.2f} and a std coverage of {feature.std_coverage:.2f} and correlation of {feature.corr:.2f}")
-        plot_feature(feature, enstrophy_data, code=code)
+    if features_to_plot is not None:
+        bingo_features = [bingo_features[feature_index] for feature_index in features_to_plot]
+    else:
+        bingo_features = bingo_features[::-1]
+
+    pdf_path = f"figures/features_traj_{trajectory_id}_step_{step}.pdf"
+    Path("outputs").mkdir(exist_ok=True)
+    with PdfPages(pdf_path) as pdf:
+        for cnt, feature in enumerate(bingo_features):
+            if cnt == 20:
+                break
+            title = f"Feature {feature.index}: mean coverage = {feature.coverage:.2f}, std coverage = {feature.std_coverage:.2f}, correlation = {feature.corr:.2f}"
+            print(title)
+            fig = plot_feature(feature, enstrophy_data, code=code, title=title)
+            pdf.savefig(fig)
+            plt.close(fig)
+    print(f"Saved PDF to {pdf_path}")
+
+    return [feature.index for feature in bingo_features]
+
+
+if __name__ == "__main__":
+    bingo_features = main(trajectory_id=50, step_index=1)
+    main(trajectory_id=2, step_index=1, features_to_plot = bingo_features)

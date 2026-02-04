@@ -93,7 +93,7 @@ def collect_activations(cfg, trajectory_id: int, top_k: int = 20, max_loops: int
                         for act_file in act_files
                     ]
                 )
-                + 1
+                + cfg.walrus.n_steps_input + 1
             )
         )
     }
@@ -164,7 +164,7 @@ if __name__ == "__main__":
     )
     top_ids = group[:20]["id"].to_list()
 
-    for top_id in top_ids:
+    for top_id in top_ids[:1]:
         activations = collect_activations(cfg, top_id) #, max_loops = 2) #, max_loops = 2)
         os.makedirs(output_dir := this_dir / "bingo", exist_ok=True)
         with open(output_dir / f"activations_traj_{top_id}.pkl", "wb") as f:
