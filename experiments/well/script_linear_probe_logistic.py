@@ -24,7 +24,6 @@ from walrus_workshop.metrics import compute_okubo_weiss
 import torch.nn as nn
 import numpy as np
 from dataclasses import dataclass
-from scipy.stats import spearmanr
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -37,9 +36,9 @@ class Feature:
 @dataclass
 class ProbeResult:
     feature_idx: int
-    r_squared: float
-    spearman_rho: float
-    spearman_p: float
+    accuracy: float
+    f1: float
+    auroc: float
     weight: float
     bias: float
 
@@ -83,8 +82,8 @@ def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, devi
     return data_chunk
 
 
-class LinearProbe(nn.Module):
-    """Single-feature linear probe: y_hat = a * alpha_j + b"""
+class LogisticProbe(nn.Module):
+    """Single-feature logistic probe: logit = a * alpha_j + b"""
     def __init__(self):
         super().__init__()
         self.a = nn.Parameter(torch.zeros(1))
@@ -97,11 +96,11 @@ class LinearProbe(nn.Module):
 def train_probe(alpha_j: torch.Tensor, target: torch.Tensor,
                 lr=1e-3, n_steps=1000, device="cpu"):
     """
-    Train a single linear probe for one SAE feature.
+    Train a single logistic probe for one SAE feature.
 
     Args:
         alpha_j: (N,) feature activations for feature j
-        target:  (N,) continuous target field (e.g. total deformation)
+        target:  (N,) binary target in {-1, +1}
         lr: learning rate
         n_steps: training iterations
         device: "cpu" or "cuda"
@@ -109,55 +108,60 @@ def train_probe(alpha_j: torch.Tensor, target: torch.Tensor,
     Returns:
         Trained probe and final training loss
     """
-    probe = LinearProbe().to(device)
+    probe = LogisticProbe().to(device)
     alpha_j = alpha_j.float().to(device)
-    target = target.float().to(device)
-
-    # Standardize target for stable training
-    t_mean, t_std = target.mean(), target.std()
-    target_norm = (target - t_mean) / (t_std + 1e-8)
+    target = (target.float().to(device) + 1) / 2  # {-1,+1} -> {0,1}
 
     opt = torch.optim.Adam(probe.parameters(), lr=lr)
-    loss_fn = nn.MSELoss()
+    loss_fn = nn.BCEWithLogitsLoss()
 
     for step in range(n_steps):
         opt.zero_grad()
-        pred = probe(alpha_j).squeeze()
-        loss = loss_fn(pred, target_norm)
+        logits = probe(alpha_j).squeeze()
+        loss = loss_fn(logits, target)
         loss.backward()
         opt.step()
-
-    # Rescale parameters back to original target scale
-    with torch.no_grad():
-        probe.a.data *= t_std
-        probe.b.data = probe.b.data * t_std + t_mean
 
     return probe, loss.item()
 
 
 def evaluate_probe(probe, alpha_j, target, device="cpu"):
-    """Compute R² and Spearman correlation for a trained probe."""
+    """Compute accuracy, F1, and AUROC for a trained logistic probe."""
     alpha_j = alpha_j.float().to(device)
-    target = target.float().to(device)
+    target = (target.float().to(device) + 1) / 2  # {-1,+1} -> {0,1}
 
     with torch.no_grad():
-        pred = probe(alpha_j).squeeze()
+        logits = probe(alpha_j).squeeze()
+        probs = torch.sigmoid(logits)
 
-    pred_np = pred.cpu().numpy()
-    target_np = target.cpu().numpy()
+    pred_labels = (probs >= 0.5).float()
 
-    # R²
-    ss_res = np.sum((target_np - pred_np) ** 2)
-    ss_tot = np.sum((target_np - target_np.mean()) ** 2)
-    r2 = 1 - ss_res / (ss_tot + 1e-8)
+    # Accuracy
+    accuracy = (pred_labels == target).float().mean().item()
 
-    # Spearman rank correlation (handle constant input)
-    if np.std(pred_np) < 1e-10 or np.std(target_np) < 1e-10:
-        rho, p_val = np.nan, np.nan
+    # F1 (positive class = 1)
+    tp = ((pred_labels == 1) & (target == 1)).sum().float()
+    fp = ((pred_labels == 1) & (target == 0)).sum().float()
+    fn = ((pred_labels == 0) & (target == 1)).sum().float()
+    precision = tp / (tp + fp + 1e-8)
+    recall = tp / (tp + fn + 1e-8)
+    f1 = (2 * precision * recall / (precision + recall + 1e-8)).item()
+
+    # AUROC via trapezoidal rule
+    sorted_indices = torch.argsort(probs, descending=True)
+    sorted_target = target[sorted_indices]
+    n_pos = target.sum()
+    n_neg = (1 - target).sum()
+    if n_pos < 1 or n_neg < 1:
+        auroc = float('nan')
     else:
-        rho, p_val = spearmanr(pred_np, target_np)
+        tpr = torch.cumsum(sorted_target, dim=0) / n_pos
+        fpr = torch.cumsum(1 - sorted_target, dim=0) / n_neg
+        tpr = torch.cat([torch.zeros(1, device=device), tpr])
+        fpr = torch.cat([torch.zeros(1, device=device), fpr])
+        auroc = torch.trapezoid(tpr, fpr).item()
 
-    return r2, rho, p_val
+    return accuracy, f1, auroc
 
 
 def plot_feature(feature, data_chunk, with_simulation=False, verbose=False, simulation_field=0):
@@ -183,17 +187,17 @@ def probe_all_features(activations: torch.Tensor, target: torch.Tensor,
                        train_frac=0.8, lr=1e-3, n_steps=1000,
                        device="cpu", verbose=True):
     """
-    Train and evaluate a linear probe for every SAE feature.
+    Train and evaluate a logistic probe for every SAE feature.
 
     Args:
         activations: (N, n_l) sparse feature activations across all nodes/times
-        target:      (N,) continuous target values
+        target:      (N,) binary target in {-1, +1}
         train_frac:  fraction of data for training
         lr, n_steps: training hyperparameters
         device: "cpu" or "cuda"
 
     Returns:
-        List of ProbeResult sorted by R² (descending)
+        List of ProbeResult sorted by AUROC (descending)
     """
     N, n_l = activations.shape
     assert target.shape[0] == N
@@ -216,13 +220,13 @@ def probe_all_features(activations: torch.Tensor, target: torch.Tensor,
             continue
 
         probe, _ = train_probe(col, t_train, lr=lr, n_steps=n_steps, device=device)
-        r2, rho, p_val = evaluate_probe(probe, act_val[:, j], t_val, device=device)
+        accuracy, f1, auroc = evaluate_probe(probe, act_val[:, j], t_val, device=device)
 
         results.append(ProbeResult(
             feature_idx=j,
-            r_squared=r2,
-            spearman_rho=rho,
-            spearman_p=p_val,
+            accuracy=accuracy,
+            f1=f1,
+            auroc=auroc,
             weight=probe.a.item(),
             bias=probe.b.item(),
         ))
@@ -230,13 +234,13 @@ def probe_all_features(activations: torch.Tensor, target: torch.Tensor,
         if verbose and (j + 1) % 500 == 0:
             print(f"  Probed {j+1}/{n_l} features")
 
-    results.sort(key=lambda r: r.r_squared, reverse=True)
+    results.sort(key=lambda r: r.auroc, reverse=True)
 
     if verbose:
-        print(f"\nTop 5 features by R²:")
+        print("\nTop 5 features by AUROC:")
         for r in results[:5]:
-            print(f"  Feature {r.feature_idx:5d} | R²={r.r_squared:.4f} "
-                  f"| ρ={r.spearman_rho:.4f} (p={r.spearman_p:.2e})")
+            print(f"  Feature {r.feature_idx:5d} | AUROC={r.auroc:.4f} "
+                  f"| F1={r.f1:.4f} | Acc={r.accuracy:.4f}")
 
     return results
 
