@@ -19,7 +19,7 @@ from sortedcontainers import SortedList
 from walrus_workshop.utils import get_key_value_from_string
 from walrus_workshop.walrus import get_trajectory
 from walrus_workshop.model import load_sae
-from walrus_workshop.metrics import compute_enstrophy, compute_deformation
+from walrus_workshop.metrics import compute_okubo_weiss
 
 import torch.nn as nn
 import numpy as np
@@ -72,22 +72,14 @@ def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, devi
     scale_x = int(simulation_chunk.shape[2] / 32)  # width
     scale_y = int(simulation_chunk.shape[1] / 32)  # height
 
-    # total_deformation = np.zeros((simulation_chunk.shape[0], 32, 32)) # 32x32 grid of total deformation
-    # for i in range(simulation_chunk.shape[0]):
-    #     for ix in range(32):
-    #         for iy in range(32):
-    #             token = simulation_chunk[i, iy*scale_y:(iy+1)*scale_y, ix*scale_x:scale_x*(ix+1), :]
-    #             total_deformation[i, iy, ix] = np.sqrt(np.mean(compute_deformation(token[:, :, 2], token[:, :, 3])[0]))
-
-    enstrophy = np.zeros((simulation_chunk.shape[0], 32, 32))
+    Q_sign = np.zeros((simulation_chunk.shape[0], 32, 32)) # 32 x 32 
     for i in range(simulation_chunk.shape[0]):
         for ix in range(32):
             for iy in range(32):
                 token = simulation_chunk[i, iy*scale_y:(iy+1)*scale_y, ix*scale_x:scale_x*(ix+1), :]
-                enstrophy[i, iy, ix] = compute_enstrophy(token[:, :, 2], token[:, :, 3])[0]
-    dEdt = -1*np.diff(enstrophy, axis=0)
+                Q_sign[i, iy, ix] = np.sign(compute_okubo_weiss(token[:, :, 2], token[:, :, 3])[0].mean())
 
-    data_chunk = DataChunk(step=step, n_features=code.shape[1], n_timesteps=simulation_chunk.shape[0]-1, simulation=simulation_chunk[:-1], code=code, target=dEdt)
+    data_chunk = DataChunk(step=step, n_features=code.shape[1], n_timesteps=simulation_chunk.shape[0]-1, simulation=simulation_chunk[:-1], code=code, target=Q_sign)
     return data_chunk
 
 
