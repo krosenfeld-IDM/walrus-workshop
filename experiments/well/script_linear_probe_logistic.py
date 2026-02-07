@@ -78,7 +78,7 @@ def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, devi
                 token = simulation_chunk[i, iy*scale_y:(iy+1)*scale_y, ix*scale_x:scale_x*(ix+1), :]
                 Q_sign[i, iy, ix] = np.sign(compute_okubo_weiss(token[:, :, 2], token[:, :, 3])[0].mean())
 
-    data_chunk = DataChunk(step=step, n_features=code.shape[1], n_timesteps=simulation_chunk.shape[0]-1, simulation=simulation_chunk[:-1], code=code, target=Q_sign)
+    data_chunk = DataChunk(step=step, n_features=code.shape[1], n_timesteps=simulation_chunk.shape[0]-1, simulation=simulation_chunk[:-1], code=code, target=Q_sign[:-1])
     return data_chunk
 
 
@@ -293,7 +293,7 @@ if __name__ == "__main__":
     # Save the probe results
     output_dir = Path("probes")
     os.makedirs(output_dir, exist_ok=True)
-    with open(output_dir / f"probe_results_traj_{trajectory_id}_dEdt.pkl", "wb") as f:
+    with open(output_dir / f"logistic_probe_results_traj_{trajectory_id}_Q_sign.pkl", "wb") as f:
         pickle.dump(probe_results, f)
 
     #
