@@ -3,7 +3,7 @@
 # Model architecture parameters
 model:
   expansion_factor: 8  # Multiplier for latent dimension (latent = d_in * expansion_factor)
-  k_active: 32  # Number of active neurons
+  k_active: 32 # Number of active neurons
   k_aux: 2048  # Number of auxiliary neurons (512 in paper)
   dead_window: 5_000_000  # Window for dead neuron tracking
 

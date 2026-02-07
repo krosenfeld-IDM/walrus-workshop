@@ -3,25 +3,24 @@ Calculate errors for saved activations
 """
 
 import copy
-from dataclasses import dataclass
-import torch
+import glob
 import logging
+import os
 import pickle
-from alive_progress import alive_it
-
-from omegaconf import OmegaConf
-from walrus_workshop.walrus import get_trajectory
-from walrus_workshop import paths
-from hydra.utils import instantiate
-
+import re
+from dataclasses import dataclass
 from pathlib import Path
 
-import re
-import glob
-from walrus.data.well_to_multi_transformer import ChannelsFirstWithTimeFormatter
-
-import os
+import polars as pl
 import numpy as np
+import torch
+from alive_progress import alive_it
+from hydra.utils import instantiate
+from omegaconf import OmegaConf
+
+from walrus.data.well_to_multi_transformer import ChannelsFirstWithTimeFormatter
+from walrus_workshop import paths
+from walrus_workshop.walrus import get_trajectory
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -101,7 +100,7 @@ def predict(trajectory_id: int, cfg, formatter, revin, model):
                 "test",
                 "blocks.20.space_mixing.activation",
                 "shear_flow",
-                f"*traj_{trajectory_id}*",
+                f"*traj_{trajectory_id}_*",
             )
         )
         steps = [search_filename(file, "step") for file in act_files]
@@ -190,11 +189,14 @@ def main():
     revin = instantiate(cfg.trainer.revin)()  # This is a functools partial by default
     model = load_model(cfg)
 
-    num_traj = 112
-    for trajectory_id in range(num_traj):
+    from script_enstrophy import load_enstrophy_df
+    df = load_enstrophy_df(data_id="shear_flow")
+    group = df.group_by('id', 'filename').agg(pl.col('abs_derivative').median().alias('median_abs_derivative')).sort('median_abs_derivative', descending=True)
+    top_ids = group[:20]["id"].to_list()
+    for trajectory_id in top_ids:
+        print(f"Processing trajectory {trajectory_id}")
         predict(trajectory_id=trajectory_id, cfg=cfg, formatter=formatter, revin=revin, model=model)
         logger.info(f"Processed trajectory {trajectory_id}")
-
 
 if __name__ == "__main__":
     main()
