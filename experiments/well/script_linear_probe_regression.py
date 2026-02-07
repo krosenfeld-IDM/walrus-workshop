@@ -1,5 +1,19 @@
 """
 Train a linear probe using SAE features as input and the deformation as output.
+
+Top 5 features by R² for trajectory 50 for deformation:
+  Feature 13376 | R²=0.0031 | ρ=0.1105 (p=1.24e-113)
+  Feature  8952 | R²=0.0028 | ρ=0.0835 (p=1.65e-65)
+  Feature 22206 | R²=0.0026 | ρ=0.0746 (p=1.41e-52)
+  Feature 14734 | R²=0.0024 | ρ=0.1030 (p=5.63e-99)
+  Feature  9713 | R²=0.0023 | ρ=0.1174 (p=5.24e-128)
+
+Top 5 features by R² for dEdt:
+  Feature 13441 | R²=0.0011 | ρ=0.0762 (p=7.51e-55)
+  Feature 14734 | R²=0.0011 | ρ=0.0637 (p=7.07e-39)
+  Feature 16056 | R²=0.0010 | ρ=0.0765 (p=2.74e-55)
+  Feature 19092 | R²=0.0010 | ρ=0.0633 (p=2.52e-38)
+  Feature 17801 | R²=0.0009 | ρ=0.0699 (p=1.98e-46)
 """
 
 import os
@@ -20,12 +34,14 @@ from walrus_workshop.walrus import get_trajectory
 from walrus_workshop.model import load_sae
 from walrus_workshop.metrics import compute_enstrophy, compute_deformation
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 import torch.nn as nn
 import numpy as np
 from dataclasses import dataclass
 from scipy.stats import spearmanr
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 
 @dataclass
 class Feature:
@@ -47,7 +63,7 @@ class DataChunk:
     n_timesteps: int
     simulation: np.ndarray
     code: np.ndarray
-    total_deformation: np.ndarray
+    target: np.ndarray
 
 def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, device, verbose=False):
 
@@ -62,21 +78,29 @@ def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, devi
     code = code.cpu().numpy()
 
     # Get simulation chunk
-    simulation_chunk = trajectory['input_fields'][0, step:step+cfg.walrus.n_steps_input, :, :, 0, :]
+    simulation_chunk = trajectory['input_fields'][0, step:step+cfg.walrus.n_steps_input+1, :, :, 0, :]
     if verbose:
         print(f"Simulation chunk shape: {simulation_chunk.shape}")
 
     scale_x = int(simulation_chunk.shape[2] / 32)  # width
     scale_y = int(simulation_chunk.shape[1] / 32)  # height
-    total_deformation = np.zeros((simulation_chunk.shape[0], 32, 32)) # 32x32 grid of total deformation
 
+    # total_deformation = np.zeros((simulation_chunk.shape[0], 32, 32)) # 32x32 grid of total deformation
+    # for i in range(simulation_chunk.shape[0]):
+    #     for ix in range(32):
+    #         for iy in range(32):
+    #             token = simulation_chunk[i, iy*scale_y:(iy+1)*scale_y, ix*scale_x:scale_x*(ix+1), :]
+    #             total_deformation[i, iy, ix] = np.sqrt(np.mean(compute_deformation(token[:, :, 2], token[:, :, 3])[0]))
+
+    enstrophy = np.zeros((simulation_chunk.shape[0], 32, 32))
     for i in range(simulation_chunk.shape[0]):
         for ix in range(32):
             for iy in range(32):
                 token = simulation_chunk[i, iy*scale_y:(iy+1)*scale_y, ix*scale_x:scale_x*(ix+1), :]
-                total_deformation[i, iy, ix] = np.sqrt(np.mean(compute_deformation(token[:, :, 2], token[:, :, 3])[0]))
+                enstrophy[i, iy, ix] = compute_enstrophy(token[:, :, 2], token[:, :, 3])[0]
+    dEdt = -1*np.diff(enstrophy, axis=0)
 
-    data_chunk = DataChunk(step=step, n_features=code.shape[1], n_timesteps=simulation_chunk.shape[0], simulation=simulation_chunk, code=code, total_deformation=total_deformation)
+    data_chunk = DataChunk(step=step, n_features=code.shape[1], n_timesteps=simulation_chunk.shape[0]-1, simulation=simulation_chunk[:-1], code=code, target=dEdt)
     return data_chunk
 
 
@@ -274,16 +298,19 @@ if __name__ == "__main__":
     for step_index, step in enumerate(alive_it(steps)):
         data_chunk = get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, device, verbose=False)
         activations.append(data_chunk.code)
-        target.append(data_chunk.total_deformation)
+        target.append(data_chunk.target)
     activations = torch.from_numpy(np.array(activations)).to(device) # [N, B, F]
     activations = activations.flatten(0, -2)  # flatten dims 0 through second-to-last
     target = torch.from_numpy(np.array(target)).to(device)
     target = target.flatten() # flatten all dims
 
-    # Train the probe
+    # Train the probe on the SAE features
     probe_results = probe_all_features(activations, target, device=device, verbose=True)
 
+    # Save the probe results
     output_dir = Path("probes")
     os.makedirs(output_dir, exist_ok=True)
-    with open(output_dir / f"probe_results_traj_{trajectory_id}.pkl", "wb") as f:
+    with open(output_dir / f"probe_results_traj_{trajectory_id}_dEdt.pkl", "wb") as f:
         pickle.dump(probe_results, f)
+
+    #
