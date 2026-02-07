@@ -107,8 +107,8 @@ def train_probe(alpha_j: torch.Tensor, target: torch.Tensor,
         Trained probe and final training loss
     """
     probe = LinearProbe().to(device)
-    alpha_j = alpha_j.to(device)
-    target = target.to(device)
+    alpha_j = alpha_j.float().to(device)
+    target = target.float().to(device)
 
     # Standardize target for stable training
     t_mean, t_std = target.mean(), target.std()
@@ -134,8 +134,8 @@ def train_probe(alpha_j: torch.Tensor, target: torch.Tensor,
 
 def evaluate_probe(probe, alpha_j, target, device="cpu"):
     """Compute R² and Spearman correlation for a trained probe."""
-    alpha_j = alpha_j.to(device)
-    target = target.to(device)
+    alpha_j = alpha_j.float().to(device)
+    target = target.float().to(device)
 
     with torch.no_grad():
         pred = probe(alpha_j).squeeze()
@@ -148,8 +148,11 @@ def evaluate_probe(probe, alpha_j, target, device="cpu"):
     ss_tot = np.sum((target_np - target_np.mean()) ** 2)
     r2 = 1 - ss_res / (ss_tot + 1e-8)
 
-    # Spearman rank correlation
-    rho, p_val = spearmanr(pred_np, target_np)
+    # Spearman rank correlation (handle constant input)
+    if np.std(pred_np) < 1e-10 or np.std(target_np) < 1e-10:
+        rho, p_val = np.nan, np.nan
+    else:
+        rho, p_val = spearmanr(pred_np, target_np)
 
     return r2, rho, p_val
 
@@ -203,7 +206,7 @@ def probe_all_features(activations: torch.Tensor, target: torch.Tensor,
     t_val = target[val_idx]
 
     results = []
-    for j in range(n_l):
+    for j in alive_it(range(n_l)):
         # Skip dead features (all zeros)
         col = act_train[:, j]
         if col.abs().max() < 1e-10:
