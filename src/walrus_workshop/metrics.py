@@ -3,6 +3,46 @@ from numpy.fft import fft2, ifft2, fftfreq
 
 import numpy as np
 
+def compute_okubo_weiss(u, v, dx=1.0, dy=1.0):
+    """
+    Compute the Okubo-Weiss parameter Q = S² - ω² on a uniform grid.
+
+    Q > 0: strain-dominated (filaments, stretching)
+    Q < 0: vorticity-dominated (vortex cores)
+
+    Args:
+        u: (ny, nx) x-velocity field
+        v: (ny, nx) y-velocity field
+        dx: grid spacing in x
+        dy: grid spacing in y
+
+    Returns:
+        Q:     (ny, nx) Okubo-Weiss parameter
+        sn:    (ny, nx) normal strain  (du/dx - dv/dy)
+        ss:    (ny, nx) shear strain   (dv/dx + du/dy)
+        omega: (ny, nx) vorticity      (dv/dx - du/dy)
+    """
+    # Velocity gradients via central differences
+    dudx = np.gradient(u, dx, axis=1)
+    dudy = np.gradient(u, dy, axis=0)
+    dvdx = np.gradient(v, dx, axis=1)
+    dvdy = np.gradient(v, dy, axis=0)
+
+    # Normal (stretching) strain rate
+    sn = dudx - dvdy
+
+    # Shear strain rate
+    ss = dvdx + dudy
+
+    # Vorticity
+    omega = dvdx - dudy
+
+    # Okubo-Weiss: Q = Sn² + Ss² - ω²
+    Q = sn**2 + ss**2 - omega**2
+
+    return Q, sn, ss, omega
+
+
 def compute_deformation(u, v, dx=1.0, dy=1.0):
     """
     Compute total deformation from horizontal wind fields on a uniform grid.
