@@ -3,6 +3,52 @@ from numpy.fft import fft2, ifft2, fftfreq
 
 import numpy as np
 
+def coarsen_field(field, coarse_shape, method='mean'):
+    """
+    Coarsen a fine-grid field to a coarse grid by block averaging.
+    
+    Args:
+        field: (ny_fine, nx_fine) array
+        coarse_shape: (ny_coarse, nx_coarse)
+        method: 'mean' for continuous fields, 'fraction' for binary masks
+    """
+    ny_f, nx_f = field.shape
+    ny_c, nx_c = coarse_shape
+    
+    # Reshape into blocks and average
+    block_y = ny_f // ny_c
+    block_x = nx_f // nx_c
+    
+    # Trim if not evenly divisible
+    trimmed = field[:ny_c * block_y, :nx_c * block_x]
+    
+    blocks = trimmed.reshape(ny_c, block_y, nx_c, block_x)
+    return blocks.mean(axis=(1, 3))
+
+
+def subgrid_stress(u_fine, v_fine, coarse_shape):
+    """
+    tau_ij = coarsen(u_i * u_j) - coarsen(u_i) * coarsen(u_j)
+    
+    This is exactly what the model must implicitly
+    parameterize to make accurate predictions.
+    """
+    uu = coarsen_field(u_fine * u_fine, coarse_shape)
+    vv = coarsen_field(v_fine * v_fine, coarse_shape)
+    uv = coarsen_field(u_fine * v_fine, coarse_shape)
+    
+    u_c = coarsen_field(u_fine, coarse_shape)
+    v_c = coarsen_field(v_fine, coarse_shape)
+    
+    tau_xx = uu - u_c * u_c
+    tau_yy = vv - v_c * v_c
+    tau_xy = uv - u_c * v_c
+    
+    # Subgrid kinetic energy (scalar summary)
+    tke = 0.5 * (tau_xx + tau_yy)
+    
+    return tau_xx, tau_yy, tau_xy, tke
+
 def compute_okubo_weiss(u, v, dx=1.0, dy=1.0):
     """
     Compute the Okubo-Weiss parameter Q = S² - ω² on a uniform grid.
