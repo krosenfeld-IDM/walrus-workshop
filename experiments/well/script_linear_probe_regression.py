@@ -39,6 +39,8 @@ import torch.nn as nn
 import numpy as np
 from dataclasses import dataclass
 from scipy.stats import spearmanr
+from sklearn.linear_model import Ridge
+from sklearn.model_selection import train_test_split
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -56,6 +58,8 @@ class ProbeResult:
     spearman_p: float
     weight: float
     bias: float
+    r_squared_conditional: float = np.nan
+    frac_active: float = 0.0
 
 @dataclass
 class DataChunk:
@@ -74,6 +78,10 @@ def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, devi
     assert get_key_value_from_string(Path(act_files[step_index]).stem, "step") == step # make sure we are processing the same step
     act = zarr.open(act_files[step_index], mode="r")
     act = torch.from_numpy(np.array(act)).to(device)
+    n_t = cfg.walrus.n_steps_input
+    spatial_size = 32
+    assert act.shape[0] == n_t * spatial_size * spatial_size, \
+        f"Expected {n_t * spatial_size * spatial_size} tokens, got {act.shape[0]}"
     with torch.no_grad():
         _, code, _ = sae_model(act)
     code = code.cpu().numpy()
@@ -96,7 +104,7 @@ def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, devi
     # for i in range(simulation_chunk.shape[0]):
     #     target_field[i] = subgrid_stress(simulation_chunk[i, ..., 1], simulation_chunk[i, ..., 2], (32, 32))[target_index_dict[target]]
 
-    data_chunk = DataChunk(step=step, n_features=code.shape[1], n_timesteps=1, simulation=simulation_chunk[-1], code=code.reshape(6, 32, 32, -1)[-1], target=target_field[-1])
+    data_chunk = DataChunk(step=step, n_features=code.shape[1], n_timesteps=1, simulation=simulation_chunk[-1], code=code.reshape(n_t, spatial_size, spatial_size, -1)[-1], target=target_field[-1])
     return data_chunk
 
 
@@ -153,7 +161,7 @@ def train_probe(alpha_j: torch.Tensor, target: torch.Tensor,
 
 
 def evaluate_probe(probe, alpha_j, target, device="cpu"):
-    """Compute R² and Spearman correlation for a trained probe."""
+    """Compute R², conditional R², and Spearman correlation for a trained probe."""
     alpha_j = alpha_j.float().to(device)
     target = target.float().to(device)
 
@@ -162,11 +170,23 @@ def evaluate_probe(probe, alpha_j, target, device="cpu"):
 
     pred_np = pred.cpu().numpy()
     target_np = target.cpu().numpy()
+    alpha_np = alpha_j.cpu().numpy()
 
-    # R²
+    # R² (unconditional — over all tokens)
     ss_res = np.sum((target_np - pred_np) ** 2)
     ss_tot = np.sum((target_np - target_np.mean()) ** 2)
     r2 = 1 - ss_res / (ss_tot + 1e-8)
+
+    # Conditional R² (only on tokens where feature fires)
+    active_mask = alpha_np > 0
+    if active_mask.sum() > 1:
+        ss_res_cond = np.sum((target_np[active_mask] - pred_np[active_mask]) ** 2)
+        ss_tot_cond = np.sum((target_np[active_mask] - target_np[active_mask].mean()) ** 2)
+        r2_conditional = 1 - ss_res_cond / (ss_tot_cond + 1e-8)
+        frac_active = active_mask.mean()
+    else:
+        r2_conditional = np.nan
+        frac_active = 0.0
 
     # Spearman rank correlation (handle constant input)
     if np.std(pred_np) < 1e-10 or np.std(target_np) < 1e-10:
@@ -174,7 +194,7 @@ def evaluate_probe(probe, alpha_j, target, device="cpu"):
     else:
         rho, p_val = spearmanr(pred_np, target_np)
 
-    return r2, rho, p_val
+    return r2, rho, p_val, r2_conditional, frac_active
 
 
 def plot_feature(feature, data_chunk, with_simulation=False, verbose=False, simulation_field=0):
@@ -217,6 +237,58 @@ def probe_neurons_baseline(neuron_activations: torch.Tensor, target: torch.Tenso
                               n_steps=n_steps, device=device,
                               verbose=verbose)
 
+def probe_top_features_jointly(activations: torch.Tensor, target: torch.Tensor,
+                               top_k=50, alpha=1.0, test_size=0.2,
+                               random_state=42, verbose=True):
+    """
+    Multivariate ridge regression using top-k most-active SAE features.
+
+    Fits a joint linear model y = X @ w + b using the top-k features
+    (by activation frequency) to show whether features collectively
+    explain the target even if individual R² values are low.
+
+    Args:
+        activations: (N, n_l) sparse feature activations
+        target: (N,) continuous target values
+        top_k: number of top features to select by activation frequency
+        alpha: Ridge regularization strength
+        test_size: fraction of data for validation
+        random_state: random seed for train/test split
+        verbose: print results
+
+    Returns:
+        dict with keys: r2_train, r2_val, top_indices, model
+    """
+    # Select features with highest activation frequency
+    activity = (activations > 0).float().mean(dim=0)
+    top_indices = activity.topk(top_k).indices
+
+    X = activations[:, top_indices].cpu().numpy()
+    y = target.cpu().numpy()
+
+    X_train, X_val, y_train, y_val = train_test_split(
+        X, y, test_size=test_size, random_state=random_state
+    )
+
+    model = Ridge(alpha=alpha)
+    model.fit(X_train, y_train)
+
+    r2_train = model.score(X_train, y_train)
+    r2_val = model.score(X_val, y_val)
+
+    if verbose:
+        print(f"\nJoint ridge probe (top {top_k} features, alpha={alpha}):")
+        print(f"  R² train = {r2_train:.4f}")
+        print(f"  R² val   = {r2_val:.4f}")
+
+    return {
+        "r2_train": r2_train,
+        "r2_val": r2_val,
+        "top_indices": top_indices,
+        "model": model,
+    }
+
+
 def probe_all_features(activations: torch.Tensor, target: torch.Tensor,
                        train_frac=0.8, lr=1e-3, n_steps=1000,
                        device="cpu", verbose=True):
@@ -254,7 +326,7 @@ def probe_all_features(activations: torch.Tensor, target: torch.Tensor,
             continue
 
         probe, _ = train_probe(col, t_train, lr=lr, n_steps=n_steps, device=device)
-        r2, rho, p_val = evaluate_probe(probe, act_val[:, j], t_val, device=device)
+        r2, rho, p_val, r2_cond, frac_active = evaluate_probe(probe, act_val[:, j], t_val, device=device)
 
         results.append(ProbeResult(
             feature_idx=j,
@@ -263,6 +335,8 @@ def probe_all_features(activations: torch.Tensor, target: torch.Tensor,
             spearman_p=p_val,
             weight=probe.a.item(),
             bias=probe.b.item(),
+            r_squared_conditional=r2_cond,
+            frac_active=frac_active,
         ))
 
         if verbose and (j + 1) % 500 == 0:
@@ -271,9 +345,11 @@ def probe_all_features(activations: torch.Tensor, target: torch.Tensor,
     results.sort(key=lambda r: r.r_squared, reverse=True)
 
     if verbose:
-        print(f"\nTop 5 features by R²:")
+        print("\nTop 5 features by R²:")
         for r in results[:5]:
             print(f"  Feature {r.feature_idx:5d} | R²={r.r_squared:.4f} "
+                  f"| R²_cond={r.r_squared_conditional:.4f} "
+                  f"| active={r.frac_active:.3f} "
                   f"| ρ={r.spearman_rho:.4f} (p={r.spearman_p:.2e})")
 
     return results
@@ -326,11 +402,16 @@ if __name__ == "__main__":
         # Train the probe on the SAE features
         probe_results = probe_all_features(activations, target, device=device, verbose=True)
 
+        # Multi-feature ridge regression probe
+        ridge_results = probe_top_features_jointly(activations, target, top_k=50, alpha=1.0, verbose=True)
+
         # Save the probe results
         output_dir = Path("probes")
         os.makedirs(output_dir, exist_ok=True)
         with open(output_dir / f"probe_results_traj_{trajectory_id}_{target_name}.pkl", "wb") as f:
             pickle.dump(probe_results, f)
+        with open(output_dir / f"probe_ridge_results_traj_{trajectory_id}_{target_name}.pkl", "wb") as f:
+            pickle.dump(ridge_results, f)
 
         # clean up memory
         del activations
