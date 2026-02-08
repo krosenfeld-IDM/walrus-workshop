@@ -25,6 +25,61 @@ def coarsen_field(field, coarse_shape, method='mean'):
     blocks = trimmed.reshape(ny_c, block_y, nx_c, block_x)
     return blocks.mean(axis=(1, 3))
 
+def compute_energy_spectrum(u, v, Lx=1.0, Ly=1.0):
+    """
+    Compute the 1D (radially averaged) kinetic energy spectrum from 2D velocity fields.
+
+    Parameters
+    ----------
+    u, v : np.ndarray, shape (Ny, Nx)
+        Velocity components on a uniform grid.
+    Lx, Ly : float
+        Physical domain size in x and y directions.
+
+    Returns
+    -------
+    k_bins : np.ndarray
+        Wavenumber bin centers.
+    E_k : np.ndarray
+        Energy spectrum E(k), where integral E(k) dk = 0.5 * <u^2 + v^2>.
+    """
+    Ny, Nx = u.shape
+    dx, dy = Lx / Nx, Ly / Ny
+
+    # Subtract the mean of the field
+    u -= u.mean()
+    v -= v.mean()
+
+    # 2D FFT (no normalization — we normalize manually)
+    u_hat = np.fft.fft2(u) / (Nx * Ny)
+    v_hat = np.fft.fft2(v) / (Nx * Ny)
+
+    # Energy per mode: 0.5 * (|u_hat|^2 + |v_hat|^2), scaled by domain area
+    # Factor of (Nx*Ny) converts from discrete to continuous Parseval
+    E_2d = 0.5 * (np.abs(u_hat) ** 2 + np.abs(v_hat) ** 2) * (Nx * Ny)
+
+    # Wavenumber grids
+    kx = np.fft.fftfreq(Nx, d=dx) * 2 * np.pi  # rad / length
+    ky = np.fft.fftfreq(Ny, d=dy) * 2 * np.pi
+    KX, KY = np.meshgrid(kx, ky)
+    K_mag = np.sqrt(KX**2 + KY**2)
+
+    # Radial binning
+    dk = 2 * np.pi / max(Lx, Ly)  # bin width ~ fundamental wavenumber
+    k_max = np.pi / min(dx, dy)    # Nyquist
+    k_edges = np.arange(0, k_max + dk, dk)
+    k_bins = 0.5 * (k_edges[:-1] + k_edges[1:])
+
+    E_k = np.zeros(len(k_bins))
+    for i in range(len(k_bins)):
+        mask = (K_mag >= k_edges[i]) & (K_mag < k_edges[i + 1])
+        E_k[i] = np.sum(E_2d[mask])
+
+    # Normalize so that sum(E_k * dk) ≈ 0.5 * mean(u^2 + v^2)
+    E_k /= dk
+
+    return k_bins, E_k
+
 
 def subgrid_stress(u_fine, v_fine, coarse_shape):
     """
