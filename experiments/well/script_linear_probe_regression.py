@@ -16,6 +16,7 @@ Top 5 features by R² for dEdt:
   Feature 17801 | R²=0.0009 | ρ=0.0699 (p=1.98e-46)
 """
 
+import gc
 import os
 import pickle
 import zarr
@@ -32,7 +33,7 @@ from sortedcontainers import SortedList
 from walrus_workshop.utils import get_key_value_from_string
 from walrus_workshop.walrus import get_trajectory
 from walrus_workshop.model import load_sae
-from walrus_workshop.metrics import compute_enstrophy, compute_deformation
+from walrus_workshop.metrics import subgrid_stress
 
 import torch.nn as nn
 import numpy as np
@@ -65,7 +66,7 @@ class DataChunk:
     code: np.ndarray
     target: np.ndarray
 
-def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, device, verbose=False):
+def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, device, verbose=False, target='tke'):
 
     # Get SAE features
     if verbose:
@@ -85,22 +86,12 @@ def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, devi
     scale_x = int(simulation_chunk.shape[2] / 32)  # width
     scale_y = int(simulation_chunk.shape[1] / 32)  # height
 
-    # total_deformation = np.zeros((simulation_chunk.shape[0], 32, 32)) # 32x32 grid of total deformation
-    # for i in range(simulation_chunk.shape[0]):
-    #     for ix in range(32):
-    #         for iy in range(32):
-    #             token = simulation_chunk[i, iy*scale_y:(iy+1)*scale_y, ix*scale_x:scale_x*(ix+1), :]
-    #             total_deformation[i, iy, ix] = np.sqrt(np.mean(compute_deformation(token[:, :, 2], token[:, :, 3])[0]))
-
-    enstrophy = np.zeros((simulation_chunk.shape[0], 32, 32))
+    target_index_dict = {'tau_xx': 0, 'tau_yy': 1, 'tau_xy': 2, 'tke': 3}
+    target_field = np.zeros((simulation_chunk.shape[0], 32, 32)) # 32 x 32 
     for i in range(simulation_chunk.shape[0]):
-        for ix in range(32):
-            for iy in range(32):
-                token = simulation_chunk[i, iy*scale_y:(iy+1)*scale_y, ix*scale_x:scale_x*(ix+1), :]
-                enstrophy[i, iy, ix] = compute_enstrophy(token[:, :, 2], token[:, :, 3])[0]
-    dEdt = -1*np.diff(enstrophy, axis=0)
+        target_field[i] = subgrid_stress(simulation_chunk[i, ..., 1], simulation_chunk[i, ..., 2], (32, 32))[target_index_dict[target]]
 
-    data_chunk = DataChunk(step=step, n_features=code.shape[1], n_timesteps=simulation_chunk.shape[0]-1, simulation=simulation_chunk[:-1], code=code, target=dEdt)
+    data_chunk = DataChunk(step=step, n_features=code.shape[1], n_timesteps=simulation_chunk.shape[0]-1, simulation=simulation_chunk[:-1], code=code, target=target_field[:-1])
     return data_chunk
 
 
@@ -200,6 +191,27 @@ def plot_feature(feature, data_chunk, with_simulation=False, verbose=False, simu
     fig.tight_layout()
     plt.show()
 
+def probe_neurons_baseline(neuron_activations: torch.Tensor, target: torch.Tensor,
+                           train_frac=0.8, lr=1e-3, n_steps=1000,
+                           device="cpu", verbose=True):
+    """
+    Same analysis but on raw neuron activations (no SAE).
+    Use this as a baseline to compare against SAE features.
+
+    Args:
+        neuron_activations: (N, n_d) raw node embeddings
+        target: (N,) continuous target values
+
+    Returns:
+        List of ProbeResult sorted by R²
+    """
+    if verbose:
+        print("Running neuron baseline probes...")
+    return probe_all_features(neuron_activations, target,
+                              train_frac=train_frac, lr=lr,
+                              n_steps=n_steps, device=device,
+                              verbose=verbose)
+
 def probe_all_features(activations: torch.Tensor, target: torch.Tensor,
                        train_frac=0.8, lr=1e-3, n_steps=1000,
                        device="cpu", verbose=True):
@@ -292,25 +304,50 @@ if __name__ == "__main__":
     sae_model, sae_config = load_sae(checkpoint_path)
     sae_model = sae_model.to(device).eval()
 
-    # Load the data
-    activations = []
-    target = []
-    for step_index, step in enumerate(alive_it(steps)):
-        data_chunk = get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, device, verbose=False)
-        activations.append(data_chunk.code)
-        target.append(data_chunk.target)
-    activations = torch.from_numpy(np.array(activations)).to(device) # [N, B, F]
-    activations = activations.flatten(0, -2)  # flatten dims 0 through second-to-last
-    target = torch.from_numpy(np.array(target)).to(device)
-    target = target.flatten() # flatten all dims
+    for target_name in ['tau_xy', 'tke', 'tau_xx', 'tau_yy']:
 
-    # Train the probe on the SAE features
-    probe_results = probe_all_features(activations, target, device=device, verbose=True)
+        # Load the data
+        activations = []
+        target = []
+        for step_index, step in enumerate(alive_it(steps)):
+            data_chunk = get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, device, verbose=False, target=target_name)
+            activations.append(data_chunk.code)
+            target.append(data_chunk.target)
+        activations = torch.from_numpy(np.array(activations)).to(device) # [N, B, F]
+        activations = activations.flatten(0, -2)  # flatten dims 0 through second-to-last
+        target = torch.from_numpy(np.array(target)).to(device)
+        target = target.flatten() # flatten all dims
 
-    # Save the probe results
-    output_dir = Path("probes")
-    os.makedirs(output_dir, exist_ok=True)
-    with open(output_dir / f"probe_results_traj_{trajectory_id}_dEdt.pkl", "wb") as f:
-        pickle.dump(probe_results, f)
+        # Train the probe on the SAE features
+        probe_results = probe_all_features(activations, target, device=device, verbose=True)
 
-    #
+        # Save the probe results
+        output_dir = Path("probes")
+        os.makedirs(output_dir, exist_ok=True)
+        with open(output_dir / f"probe_results_traj_{trajectory_id}_{target}.pkl", "wb") as f:
+            pickle.dump(probe_results, f)
+
+        # clean up memory
+        del activations
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        activations = []
+        for act_file in act_files:
+            act = np.array(zarr.open(act_file, mode="r"))
+            activations.append(act)
+        activations = torch.from_numpy(np.array(activations)).to(device) # [N B F]
+        activations = activations.flatten(0, -2)
+
+        probe_results = probe_neurons_baseline(activations, target, device=device, verbose=True)
+
+        # Save the probe results
+        output_dir = Path("probes")
+        os.makedirs(output_dir, exist_ok=True)
+        with open(output_dir / f"probe_baseline_results_traj_{trajectory_id}_{target}.pkl", "wb") as f:
+            pickle.dump(probe_results, f)
+
+        # clean up memory
+        del activations
+        gc.collect()
+        torch.cuda.empty_cache()
