@@ -79,7 +79,7 @@ def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, devi
     code = code.cpu().numpy()
 
     # Get simulation chunk
-    simulation_chunk = trajectory['input_fields'][0, step:step+cfg.walrus.n_steps_input+1, :, :, 0, :]
+    simulation_chunk = trajectory['input_fields'][0, step:step+cfg.walrus.n_steps_input, :, :, 0, :]
     if verbose:
         print(f"Simulation chunk shape: {simulation_chunk.shape}")
 
@@ -96,7 +96,7 @@ def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, devi
     # for i in range(simulation_chunk.shape[0]):
     #     target_field[i] = subgrid_stress(simulation_chunk[i, ..., 1], simulation_chunk[i, ..., 2], (32, 32))[target_index_dict[target]]
 
-    data_chunk = DataChunk(step=step, n_features=code.shape[1], n_timesteps=simulation_chunk.shape[0]-1, simulation=simulation_chunk[:-1], code=code, target=target_field[:-1])
+    data_chunk = DataChunk(step=step, n_features=code.shape[1], n_timesteps=1, simulation=simulation_chunk[-1], code=code.reshape(6, 32, 32, -1)[-1], target=target_field[-1])
     return data_chunk
 
 
