@@ -324,7 +324,7 @@ if __name__ == "__main__":
         # Save the probe results
         output_dir = Path("probes")
         os.makedirs(output_dir, exist_ok=True)
-        with open(output_dir / f"probe_results_traj_{trajectory_id}_{target}.pkl", "wb") as f:
+        with open(output_dir / f"probe_results_traj_{trajectory_id}_{target_name}.pkl", "wb") as f:
             pickle.dump(probe_results, f)
 
         # clean up memory
@@ -344,7 +344,7 @@ if __name__ == "__main__":
         # Save the probe results
         output_dir = Path("probes")
         os.makedirs(output_dir, exist_ok=True)
-        with open(output_dir / f"probe_baseline_results_traj_{trajectory_id}_{target}.pkl", "wb") as f:
+        with open(output_dir / f"probe_baseline_results_traj_{trajectory_id}_{target_name}.pkl", "wb") as f:
             pickle.dump(probe_results, f)
 
         # clean up memory
