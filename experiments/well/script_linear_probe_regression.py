@@ -33,7 +33,7 @@ from sortedcontainers import SortedList
 from walrus_workshop.utils import get_key_value_from_string
 from walrus_workshop.walrus import get_trajectory
 from walrus_workshop.model import load_sae
-from walrus_workshop.metrics import subgrid_stress
+from walrus_workshop.metrics import subgrid_stress, coarsen_field
 
 import torch.nn as nn
 import numpy as np
@@ -86,10 +86,15 @@ def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, devi
     scale_x = int(simulation_chunk.shape[2] / 32)  # width
     scale_y = int(simulation_chunk.shape[1] / 32)  # height
 
-    target_index_dict = {'tau_xx': 0, 'tau_yy': 1, 'tau_xy': 2, 'tke': 3}
+    target_index_dict = {'u':2, 'v':3}
     target_field = np.zeros((simulation_chunk.shape[0], 32, 32)) # 32 x 32 
     for i in range(simulation_chunk.shape[0]):
-        target_field[i] = subgrid_stress(simulation_chunk[i, ..., 1], simulation_chunk[i, ..., 2], (32, 32))[target_index_dict[target]]
+        target_field[i]  = coarsen_field(simulation_chunk[i, ..., target_index_dict[target]], (32, 32), method='mean')
+
+    # target_index_dict = {'tau_xx': 0, 'tau_yy': 1, 'tau_xy': 2, 'tke': 3}
+    # target_field = np.zeros((simulation_chunk.shape[0], 32, 32)) # 32 x 32 
+    # for i in range(simulation_chunk.shape[0]):
+    #     target_field[i] = subgrid_stress(simulation_chunk[i, ..., 1], simulation_chunk[i, ..., 2], (32, 32))[target_index_dict[target]]
 
     data_chunk = DataChunk(step=step, n_features=code.shape[1], n_timesteps=simulation_chunk.shape[0]-1, simulation=simulation_chunk[:-1], code=code, target=target_field[:-1])
     return data_chunk
@@ -304,7 +309,7 @@ if __name__ == "__main__":
     sae_model, sae_config = load_sae(checkpoint_path)
     sae_model = sae_model.to(device).eval()
 
-    for target_name in ['tau_xy', 'tke', 'tau_xx', 'tau_yy']:
+    for target_name in ['u', 'v']: # ['tau_xy', 'tke', 'tau_xx', 'tau_yy']:
 
         # Load the data
         activations = []
