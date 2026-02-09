@@ -117,7 +117,7 @@ def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, devi
     elif target in ['tau_xx', 'tau_yy', 'tau_xy', 'tke']:
         for i in range(simulation_chunk.shape[0]):
             target_field[i] = subgrid_stress(simulation_chunk[i, ..., 1], simulation_chunk[i, ..., 2], (32, 32))[target_index_dict[target]]
-            
+
     data_chunk = DataChunk(step=step, n_features=code.shape[1], n_timesteps=1, simulation=simulation_chunk[-1], code=code.reshape(n_t, spatial_size, spatial_size, -1)[-1], target=target_field[-1])
     return data_chunk
 
@@ -132,8 +132,63 @@ class LinearProbe(nn.Module):
     def forward(self, alpha_j):
         return self.a * alpha_j + self.b
 
-
 def train_probe(alpha_j: torch.Tensor, target: torch.Tensor,
+                lr=1e-3, n_steps=1000, device="cpu",
+                balance_threshold=0.0):
+    """
+    Train a single linear probe for one SAE feature using weighted OLS.
+
+    Args:
+        alpha_j: (N,) feature activations for feature j
+        target:  (N,) continuous target field (e.g. total deformation)
+        lr: learning rate (unused, kept for API compatibility)
+        n_steps: training iterations (unused, kept for API compatibility)
+        device: "cpu" or "cuda"
+        balance_threshold: target values above this are "positive" class
+
+    Returns:
+        Trained probe and final training loss
+    """
+    probe = LinearProbe().to(device)
+    alpha_j = alpha_j.float().to(device)
+    target = target.float().to(device)
+
+    # Build per-sample weights based on class membership
+    pos_mask = target > balance_threshold
+    n_pos = pos_mask.sum().float()
+    n_neg = (~pos_mask).sum().float()
+
+    weights = torch.ones_like(target)
+    if n_pos > 0 and n_neg > 0:
+        weights[pos_mask] = 1.0 / (2.0 * n_pos)
+        weights[~pos_mask] = 1.0 / (2.0 * n_neg)
+    else:
+        weights /= weights.sum()
+
+    # Weighted OLS closed-form: minimize sum_i w_i (a * x_i + b - y_i)^2
+    w_sum = weights.sum()
+    x_mean = (weights * alpha_j).sum() / w_sum
+    y_mean = (weights * target).sum() / w_sum
+
+    x_centered = alpha_j - x_mean
+    y_centered = target - y_mean
+
+    a = (weights * x_centered * y_centered).sum() / \
+        ((weights * x_centered * x_centered).sum() + 1e-8)
+    b = y_mean - a * x_mean
+
+    with torch.no_grad():
+        probe.a.data.fill_(a.item())
+        probe.b.data.fill_(b.item())
+
+    # Compute weighted MSE for the returned loss
+    with torch.no_grad():
+        residuals = probe(alpha_j).squeeze() - target
+        loss = (weights * residuals ** 2).sum().item()
+
+    return probe, loss
+
+def _train_probe(alpha_j: torch.Tensor, target: torch.Tensor,
                 lr=1e-3, n_steps=1000, device="cpu"):
     """
     Train a single linear probe for one SAE feature.
@@ -327,7 +382,7 @@ def probe_all_features(activations: torch.Tensor, target: torch.Tensor,
     t_val = target[val_idx]
 
     results = []
-    for j in alive_it(range(n_l)):
+    for j in range(n_l):
         # Skip dead features (all zeros)
         col = act_train[:, j]
         if col.abs().max() < 1e-10:
@@ -393,12 +448,12 @@ if __name__ == "__main__":
     sae_model, sae_config = load_sae(checkpoint_path)
     sae_model = sae_model.to(device).eval()
 
-    for target_name in ['deformation', 'shear_deformation', 'stretch_deformation']: # ['tau_xy', 'tke', 'tau_xx', 'tau_yy']: # ['u', 'v']:
+    for target_name in alive_it(['deformation', 'shear_deformation', 'stretch_deformation', 'u', 'v', 'tau_xx', 'tau_yy', 'tau_xy', 'tke']): # ['tau_xy', 'tke', 'tau_xx', 'tau_yy']: # ['u', 'v']:
 
         # Load the data
         activations = []
         target = []
-        for step_index, step in enumerate(alive_it(steps)):
+        for step_index, step in enumerate(steps):
             data_chunk = get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, device, verbose=False, target=target_name)
             activations.append(data_chunk.code)
             target.append(data_chunk.target)
