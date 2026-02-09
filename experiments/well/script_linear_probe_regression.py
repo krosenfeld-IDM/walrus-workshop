@@ -33,7 +33,7 @@ from sortedcontainers import SortedList
 from walrus_workshop.utils import get_key_value_from_string
 from walrus_workshop.walrus import get_trajectory
 from walrus_workshop.model import load_sae
-from walrus_workshop.metrics import subgrid_stress, coarsen_field
+from walrus_workshop.metrics import subgrid_stress, coarsen_field, compute_deformation
 
 import torch.nn as nn
 import numpy as np
@@ -91,19 +91,23 @@ def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, devi
     if verbose:
         print(f"Simulation chunk shape: {simulation_chunk.shape}")
 
-    scale_x = int(simulation_chunk.shape[2] / 32)  # width
-    scale_y = int(simulation_chunk.shape[1] / 32)  # height
+    # scale_x = int(simulation_chunk.shape[2] / 32)  # width
+    # scale_y = int(simulation_chunk.shape[1] / 32)  # height
 
-    target_index_dict = {'u':2, 'v':3}
-    target_field = np.zeros((simulation_chunk.shape[0], 32, 32)) # 32 x 32 
-    for i in range(simulation_chunk.shape[0]):
-        target_field[i]  = coarsen_field(simulation_chunk[i, ..., target_index_dict[target]], (32, 32), method='mean')
+    # target_index_dict = {'u':2, 'v':3}
+    # target_field = np.zeros((simulation_chunk.shape[0], 32, 32)) # 32 x 32 
+    # for i in range(simulation_chunk.shape[0]):
+    #     target_field[i]  = coarsen_field(simulation_chunk[i, ..., target_index_dict[target]], (32, 32), method='mean')
 
     # target_index_dict = {'tau_xx': 0, 'tau_yy': 1, 'tau_xy': 2, 'tke': 3}
     # target_field = np.zeros((simulation_chunk.shape[0], 32, 32)) # 32 x 32 
     # for i in range(simulation_chunk.shape[0]):
     #     target_field[i] = subgrid_stress(simulation_chunk[i, ..., 1], simulation_chunk[i, ..., 2], (32, 32))[target_index_dict[target]]
 
+    target_index_dict = {'deformation': 0, 'shear_deformation': 1, 'stretch_deformation': 2}
+    target_field = np.zeros((simulation_chunk.shape[0], 32, 32)) # 32 x 32 
+    for i in range(simulation_chunk.shape[0]):
+        target_field[i] = coarsen_field(compute_deformation(simulation_chunk[i, ..., 1], simulation_chunk[i, ..., 2])[target_index_dict[target]], (32, 32))
     data_chunk = DataChunk(step=step, n_features=code.shape[1], n_timesteps=1, simulation=simulation_chunk[-1], code=code.reshape(n_t, spatial_size, spatial_size, -1)[-1], target=target_field[-1])
     return data_chunk
 
@@ -138,26 +142,20 @@ def train_probe(alpha_j: torch.Tensor, target: torch.Tensor,
     alpha_j = alpha_j.float().to(device)
     target = target.float().to(device)
 
-    # Standardize target for stable training
-    t_mean, t_std = target.mean(), target.std()
-    target_norm = (target - t_mean) / (t_std + 1e-8)
+    # Closed-form OLS for single-feature linear regression
+    cov = ((alpha_j - alpha_j.mean()) * (target - target.mean())).mean()
+    a = cov / (alpha_j.var() + 1e-8)
+    b = target.mean() - a * alpha_j.mean()
 
-    opt = torch.optim.Adam(probe.parameters(), lr=lr)
-    loss_fn = nn.MSELoss()
-
-    for step in range(n_steps):
-        opt.zero_grad()
-        pred = probe(alpha_j).squeeze()
-        loss = loss_fn(pred, target_norm)
-        loss.backward()
-        opt.step()
-
-    # Rescale parameters back to original target scale
     with torch.no_grad():
-        probe.a.data *= t_std
-        probe.b.data = probe.b.data * t_std + t_mean
+        probe.a.data.fill_(a.item())
+        probe.b.data.fill_(b.item())
 
-    return probe, loss.item()
+    # Compute final MSE loss for consistency with original return signature
+    with torch.no_grad():
+        loss = nn.MSELoss()(probe(alpha_j).squeeze(), target).item()
+
+    return probe, loss
 
 
 def evaluate_probe(probe, alpha_j, target, device="cpu"):
@@ -385,7 +383,7 @@ if __name__ == "__main__":
     sae_model, sae_config = load_sae(checkpoint_path)
     sae_model = sae_model.to(device).eval()
 
-    for target_name in ['u', 'v']: # ['tau_xy', 'tke', 'tau_xx', 'tau_yy']:
+    for target_name in ['deformation', 'shear_deformation', 'stretch_deformation']: # ['tau_xy', 'tke', 'tau_xx', 'tau_yy']: # ['u', 'v']:
 
         # Load the data
         activations = []
@@ -422,7 +420,7 @@ if __name__ == "__main__":
         for act_file in act_files:
             act = np.array(zarr.open(act_file, mode="r"))
             activations.append(act)
-        activations = torch.from_numpy(np.array(activations)).to(device) # [N B F]
+        activations = torch.from_numpy(np.array(activations).reshape(len(steps), 6, 32, 32, -1))[:, -1, :, :, :].to(device) # [N B F]
         activations = activations.flatten(0, -2)
 
         probe_results = probe_neurons_baseline(activations, target, device=device, verbose=True)
