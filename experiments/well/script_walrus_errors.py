@@ -192,7 +192,7 @@ def main():
     from script_enstrophy import load_enstrophy_df
     df = load_enstrophy_df(data_id="shear_flow")
     group = df.group_by('id', 'filename').agg(pl.col('abs_derivative').median().alias('median_abs_derivative')).sort('median_abs_derivative', descending=True)
-    top_ids = group[:20]["id"].to_list()
+    top_ids = group["id"].to_list()
     for trajectory_id in top_ids:
         print(f"Processing trajectory {trajectory_id}")
         predict(trajectory_id=trajectory_id, cfg=cfg, formatter=formatter, revin=revin, model=model)
