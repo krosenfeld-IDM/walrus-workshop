@@ -84,7 +84,7 @@ fig.colorbar(im12, cax=cax12, orientation="horizontal")
 # Big right
 energy_spectrum_ref = EnergySpectrum(*compute_energy_spectrum(np.squeeze(error.ref[..., 1]), np.squeeze(error.ref[..., 2])))
 energy_spectrum_pred = EnergySpectrum(*compute_energy_spectrum(np.squeeze(error.pred[..., 1]), np.squeeze(error.pred[..., 2])))
-ax_big.plot(energy_spectrum_ref.k[1:], energy_spectrum_pred.E[1:] / energy_spectrum_ref.E[1:], '-', color='xkcd:blue', label="Reference")
+ax_big.plot(energy_spectrum_ref.k[1:], energy_spectrum_pred.E[1:] / energy_spectrum_ref.E[1:], '-', color='xkcd:blue', label=f"Timestep: {error.step+cfg.walrus.n_steps_input}")
 
 # Bottom-left: tracer field
 error = errors[-5]
@@ -105,7 +105,7 @@ fig.colorbar(im22, cax=cax22, orientation="horizontal")
 # Big right
 energy_spectrum_ref = EnergySpectrum(*compute_energy_spectrum(np.squeeze(error.ref[..., 1]), np.squeeze(error.ref[..., 2])))
 energy_spectrum_pred = EnergySpectrum(*compute_energy_spectrum(np.squeeze(error.pred[..., 1]), np.squeeze(error.pred[..., 2])))
-ax_big.plot(energy_spectrum_ref.k[1:], energy_spectrum_pred.E[1:] / energy_spectrum_ref.E[1:], '-', color='xkcd:brown', label="Walrus")
+ax_big.plot(energy_spectrum_ref.k[1:], energy_spectrum_pred.E[1:] / energy_spectrum_ref.E[1:], '-', color='xkcd:lightblue', label=f"Timestep: {error.step+cfg.walrus.n_steps_input}")
 
 # # Horizontal colorbars in those dedicated axes
 # fig.colorbar(im00, cax=cax_left, orientation="horizontal")
@@ -119,7 +119,7 @@ ax_big.set_title("Energy spectral ratio")
 ax_big.set_yscale("log")
 ax_big.set_xscale("log")
 ax_big.set_xlim(0.48, 6)
-ax_big.set_ylim(None, 1e5)
+ax_big.set_ylim(None, 1e4)
 ax_big.axhline(1, color='gray', linestyle='--')
 
 
