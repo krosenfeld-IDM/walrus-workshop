@@ -25,7 +25,7 @@ def coarsen_field(field, coarse_shape, method='mean'):
     blocks = trimmed.reshape(ny_c, block_y, nx_c, block_x)
     return blocks.mean(axis=(1, 3))
 
-def compute_energy_spectrum(u, v, Lx=1.0, Ly=1.0):
+def _compute_energy_spectrum(u, v, dx=1.0, dy=1.0):
     """
     Compute the 1D (radially averaged) kinetic energy spectrum from 2D velocity fields.
 
@@ -33,7 +33,7 @@ def compute_energy_spectrum(u, v, Lx=1.0, Ly=1.0):
     ----------
     u, v : np.ndarray, shape (Ny, Nx)
         Velocity components on a uniform grid.
-    Lx, Ly : float
+    dx, dy : float
         Physical domain size in x and y directions.
 
     Returns
@@ -44,7 +44,7 @@ def compute_energy_spectrum(u, v, Lx=1.0, Ly=1.0):
         Energy spectrum E(k), where integral E(k) dk = 0.5 * <u^2 + v^2>.
     """
     Ny, Nx = u.shape
-    dx, dy = Lx / Nx, Ly / Ny
+    Lx, Ly = Nx * dx, Ny * dy
 
     # Subtract the mean of the field
     u -= u.mean()
@@ -78,6 +78,59 @@ def compute_energy_spectrum(u, v, Lx=1.0, Ly=1.0):
     # Normalize so that sum(E_k * dk) ≈ 0.5 * mean(u^2 + v^2)
     E_k /= dk
 
+    return k_bins, E_k
+
+def compute_energy_spectrum(u, v, dx=1.0, dy=1.0):
+    """
+    Compute the 1D (radially averaged) kinetic energy spectrum from 2D velocity fields.
+
+    Parameters
+    ----------
+    u, v : np.ndarray, shape (Ny, Nx)
+        Velocity components on a uniform grid.
+    dx, dy : float
+        Physical domain size in x and y directions.
+
+    Returns
+    -------
+    k_bins : np.ndarray
+        Wavenumber bin centers.
+    E_k : np.ndarray
+        Energy spectrum E(k), where integral E(k) dk = 0.5 * <u^2 + v^2>.
+    """    
+    Ny, Nx = u.shape
+    Lx, Ly = Nx*dx, Ny*dy
+    N = Nx*Ny
+
+    # avoid in-place modification of caller's arrays
+    u0 = u - u.mean()
+    v0 = v - v.mean()
+
+    # FFT normalized so Parseval gives mean-square directly
+    u_hat = np.fft.fft2(u0) / N
+    v_hat = np.fft.fft2(v0) / N
+
+    # per-mode energy; sum(E_2d) ~= 0.5*mean(u^2+v^2)
+    E_2d = 0.5*(np.abs(u_hat)**2 + np.abs(v_hat)**2)
+
+    kx = np.fft.fftfreq(Nx, d=dx) * 2*np.pi
+    ky = np.fft.fftfreq(Ny, d=dy) * 2*np.pi
+    KX, KY = np.meshgrid(kx, ky)
+    K = np.sqrt(KX**2 + KY**2)
+
+    # dk = min(2*np.pi/Lx, 2*np.pi/Ly)
+    dk = 2*np.pi / min(Lx, Ly)   # = 2π/256 = Δky
+    # k_max = np.sqrt((np.pi/dx)**2 + (np.pi/dy)**2)
+    k_max = np.sqrt((np.pi/dx)**2 + (np.pi/dy)**2)
+    k_edges = np.arange(0, k_max + dk, dk)
+    k_bins = 0.5*(k_edges[:-1] + k_edges[1:])
+
+    E_shell = np.zeros_like(k_bins)
+    for i in range(len(k_bins)):
+        mask = (K >= k_edges[i]) & (K < k_edges[i+1])
+        E_shell[i] = E_2d[mask].sum()
+
+    E_k = E_shell / dk
     return k_bins, E_k
 
 
@@ -146,12 +199,12 @@ def compute_okubo_weiss(u, v, dx=1.0, dy=1.0):
 
 def compute_deformation(u, v, dx=1.0, dy=1.0):
     """
-    Compute total deformation from horizontal wind fields on a uniform grid.
+    Compute total deformation from horizontal velocity fields on a uniform grid.
     
     Parameters
     ----------
     u, v : ndarray
-        Horizontal wind components, shape (..., ny, nx)
+        Horizontal velocity components, shape (..., ny, nx)
     dx, dy : float
         Grid spacing (same units as u, v for physically meaningful output,
         or just use 1.0 for relative comparisons)
