@@ -73,7 +73,7 @@ simulation = np.squeeze(
 ).numpy()
 vmax = np.max(np.abs(simulation))
 im11 = ax11.imshow(simulation, cmap="gray", vmin=-vmax, vmax=vmax)
-ax11.set_title("Tracer")
+ax11.set_title("Tracer (s)")
 ax11.text(
     0.01,
     -0.08,
@@ -89,7 +89,7 @@ fig.colorbar(im11, cax=cax11, orientation="horizontal")
 bias = np.squeeze(error.pred[..., field_id]) - np.squeeze(error.ref[..., field_id])
 vmax = np.max(np.abs(bias))
 im12 = ax12.imshow(bias, cmap="RdBu_r", vmin=-vmax, vmax=vmax)
-ax12.set_title("Bias")
+ax12.set_title("Tracer Bias")
 fig.colorbar(im12, cax=cax12, orientation="horizontal")
 
 # Big right
