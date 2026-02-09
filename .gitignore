@@ -26,6 +26,7 @@ wheels/
 # logs
 _output/
 wandb/
+outputs/
 
 # Tools
 .cursor/

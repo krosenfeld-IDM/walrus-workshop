@@ -143,7 +143,7 @@ for trajectory_index in alive_it(range(num_trajectories)):
         0, 101, 3 # batch["input_fields"].sahpe[1] - -3
     ):  # TODO: Read this from the config
         t_start = t_start_ + rng.integers(3)
-        t_start = int(np.min([t_start, batch["input_fields"].shape[1] - 3]))
+        t_start = int(np.min([t_start, batch["input_fields"].shape[1] - 6]))
         logger.debug(
             f"Processing time step {t_start} / 101"
         )
@@ -179,7 +179,7 @@ for trajectory_index in alive_it(range(num_trajectories)):
         # Access the captured activations
         act = activations[layer_name]
 
-        # Current shape: [T, 32, 32, 1, 2816]
+        # Current shape: [(T*B), H, W, D, C_mlp] = [T, 32, 32, 1, 2816] (assumes B=1)
         # Target shape:  [Total_Tokens, Hidden_Dim]
 
         # 1. Squeeze the singleton dimension (the '1')

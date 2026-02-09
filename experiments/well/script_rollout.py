@@ -1,6 +1,7 @@
 from omegaconf import OmegaConf
 import torch
 import sys
+import pickle
 from hydra.utils import instantiate
 from walrus_workshop import paths
 from walrus.data.well_to_multi_transformer import ChannelsFirstWithTimeFormatter
@@ -9,7 +10,7 @@ from the_well.data.utils import flatten_field_names
 from the_well.benchmark.metrics import make_video
 import os
 import polars as pl
-from walrus_workshop.metrics import compute_enstrophy
+from walrus_workshop.metrics import compute_enstrophy, compute_energy_spectrum
 import logging
 from walrus_workshop.walrus import get_trajectory
 from itertools import islice
@@ -28,6 +29,7 @@ def main(
     trajectory_index: int = 0,
     video: bool = False,
     enstrophy: bool = True,
+    energy_spectrum: bool = True,
 ):
     # checkpoint_config_path = os.path.join(".", "configs", "bubbleml_poolboil_subcool.yaml")
     checkpoint = torch.load(
@@ -146,31 +148,10 @@ def main(
         y_ref = torch.cat([y0_device, y_ref], dim=1)
         y_pred = torch.cat([y0_device, y_pred], dim=1)
 
-        enstrophy_ref = []
-        enstrophy_pred = []
-
-        logger.info(f"Computing enstrophy for trajectory {trajectory_name}")
-        for i in range(y_ref.shape[1]):
-            enstrophy_ref.append(
-                compute_enstrophy(
-                    y_ref[0, i, :, :, 0, 2].cpu().numpy(),
-                    y_ref[0, i, :, :, 0, 3].cpu().numpy(),
-                )[0]
-            )
-            enstrophy_pred.append(
-                compute_enstrophy(
-                    y_pred[0][i, :, :, 0, 2].cpu().numpy(),
-                    y_pred[0][i, :, :, 0, 3].cpu().numpy(),
-                )[0]
-            )
-
-        output_dir = os.path.join("metrics", "enstrophy")
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Save the two lists to a csv file using polars
-        pl.DataFrame(
-            {"enstrophy_ref": enstrophy_ref, "enstrophy_pred": enstrophy_pred}
-        ).write_csv(os.path.join(output_dir, f"{trajectory_name}.csv"))
+    if enstrophy:
+        make_enstrophy(y_pred[0], y_ref[0], trajectory_name)
+    if energy_spectrum:
+        make_energy_spectrum(y_pred[0], y_ref[0], trajectory_name)
     if video:
         logger.info(f"Making video")
         output_dir = "./figures/"
@@ -185,10 +166,63 @@ def main(
             size_multiplier=1.0,  #
         )
 
+def make_enstrophy(y_pred, y_ref, trajectory_name):
+        enstrophy_ref = []
+        enstrophy_pred = []
+
+        logger.info(f"Computing enstrophy")
+        for i in range(y_ref.shape[0]):
+            enstrophy_ref.append(
+                compute_enstrophy(
+                    y_ref[i, :, :, 0, 2].cpu().numpy(),
+                    y_ref[i, :, :, 0, 3].cpu().numpy(),
+                )[0]
+            )
+            enstrophy_pred.append(
+                compute_enstrophy(
+                    y_pred[i, :, :, 0, 2].cpu().numpy(),
+                    y_pred[i, :, :, 0, 3].cpu().numpy(),
+                )[0]
+            )
+
+        output_dir = os.path.join("metrics", "enstrophy")
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Save the two lists to a csv file using polars
+        pl.DataFrame(
+            {"enstrophy_ref": enstrophy_ref, "enstrophy_pred": enstrophy_pred}
+        ).write_csv(os.path.join(output_dir, f"{trajectory_name}.csv"))
+
+
+def make_energy_spectrum(y_pred, y_ref, trajectory_name):
+    energy_spectrum_ref = []
+    energy_spectrum_pred = []
+    k_ref = []
+    k_pred = []
+
+    logger.info(f"Computing energy spectrum")
+    for i in range(y_ref.shape[0]):
+        k, E = compute_energy_spectrum(y_ref[i, :, :, 0, 1].cpu().numpy(), y_ref[i, :, :, 0, 2].cpu().numpy())
+        energy_spectrum_ref.append(E)
+        k_ref.append(k)
+        k, E = compute_energy_spectrum(y_pred[i, :, :, 0, 1].cpu().numpy(), y_pred[i, :, :, 0, 2].cpu().numpy())
+        energy_spectrum_pred.append(E)
+        k_pred.append(k)
+
+    output_dir = os.path.join("metrics", "energy_spectrum")
+    os.makedirs(output_dir, exist_ok=True)
+
+    with open(os.path.join(output_dir, f"{trajectory_name}.pkl"), "wb") as f:
+        pickle.dump({"energy_spectrum_ref": energy_spectrum_ref, "energy_spectrum_pred": energy_spectrum_pred, "k_ref": k_ref, "k_pred": k_pred}, f)
+
+    # # Save the two lists to a csv file using polars
+    # pl.DataFrame(
+    #     {"energy_spectrum_ref": energy_spectrum_ref, "energy_spectrum_pred": energy_spectrum_pred, "k_ref": k_ref, "k_pred": k_pred}
+    # ).write_csv(os.path.join(output_dir, f"{trajectory_name}.csv"))
 
 if __name__ == "__main__":
     import os
 
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     for trajectory_index in range(0,150):
-        main(dataset_id="shear_flow", enstrophy=True, video=False, trajectory_index=trajectory_index)
+        main(dataset_id="shear_flow", enstrophy=True, energy_spectrum=True, video=False, trajectory_index=trajectory_index)

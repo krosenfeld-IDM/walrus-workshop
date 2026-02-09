@@ -4,6 +4,18 @@ import yaml
 import os
 import re
 
+def get_key_value_from_string(string, key) -> float:
+    """ 
+    Extract the value of a key from a string in the format "Key_Value". 
+    """
+
+    match = re.search(rf"{key}_([+-]?\d+(?:e[+-]?\d+)?)", string, re.IGNORECASE)
+    if match:
+        value = float(match.group(1))
+        return value
+    else:
+        raise ValueError(f"No number found in string for {key}.")
+
 def get_keyvalue_from_string(string: str):
     """
     Extract the key and value from a string in the format "KeyValue".
