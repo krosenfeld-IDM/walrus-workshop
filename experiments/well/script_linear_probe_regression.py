@@ -91,22 +91,8 @@ def get_data_chunk(step, step_index, act_files, trajectory, cfg, sae_model, devi
     if verbose:
         print(f"Simulation chunk shape: {simulation_chunk.shape}")
 
-    # scale_x = int(simulation_chunk.shape[2] / 32)  # width
-    # scale_y = int(simulation_chunk.shape[1] / 32)  # height
     target_index_dicts = [{'u':2, 'v':3}, {'tau_xx': 0, 'tau_yy': 1, 'tau_xy': 2, 'tke': 3}, {'deformation': 0, 'shear_deformation': 1, 'stretch_deformation': 2}]
     target_index_dict = [target_index_dict for target_index_dict in target_index_dicts if target in target_index_dict][0]
-
-    # target_index_dict = {'u':2, 'v':3}
-    # target_field = np.zeros((simulation_chunk.shape[0], 32, 32)) # 32 x 32 
-    # for i in range(simulation_chunk.shape[0]):
-    #     target_field[i]  = coarsen_field(simulation_chunk[i, ..., target_index_dict[target]], (32, 32), method='mean')
-
-    # target_index_dict = {'tau_xx': 0, 'tau_yy': 1, 'tau_xy': 2, 'tke': 3}
-    # target_field = np.zeros((simulation_chunk.shape[0], 32, 32)) # 32 x 32 
-    # for i in range(simulation_chunk.shape[0]):
-    #     target_field[i] = subgrid_stress(simulation_chunk[i, ..., 1], simulation_chunk[i, ..., 2], (32, 32))[target_index_dict[target]]
-
-    # target_index_dict = {'deformation': 0, 'shear_deformation': 1, 'stretch_deformation': 2}
     target_field = np.zeros((simulation_chunk.shape[0], 32, 32)) # 32 x 32 
     if target in ['deformation', 'shear_deformation', 'stretch_deformation']:
         for i in range(simulation_chunk.shape[0]):
@@ -448,7 +434,7 @@ if __name__ == "__main__":
     sae_model, sae_config = load_sae(checkpoint_path)
     sae_model = sae_model.to(device).eval()
 
-    for target_name in alive_it(['deformation', 'shear_deformation', 'stretch_deformation', 'u', 'v', 'tau_xx', 'tau_yy', 'tau_xy', 'tke']): # ['tau_xy', 'tke', 'tau_xx', 'tau_yy']: # ['u', 'v']:
+    for target_name in alive_it(['deformation', 'shear_deformation', 'stretch_deformation', 'u', 'v', 'tau_xx', 'tau_yy', 'tau_xy', 'tke']):
 
         # Load the data
         activations = []
