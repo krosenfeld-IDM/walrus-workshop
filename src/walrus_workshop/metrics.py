@@ -272,7 +272,7 @@ def compute_energy_flux(u, v, dx=1.0, dy=1.0):
     energy, vorticity = compute_enstrophy(u, v, dx, dy)
     return _compute_energy_flux(vorticity, dx, dy)
 
-def _compute_enstrophy_flux(omega, Lx, Ly):
+def _compute_enstrophy_flux(omega, dx=1.0, dy=1.0):
     """
     Compute spectral enstrophy flux from a 2D vorticity field.
     
@@ -280,8 +280,8 @@ def _compute_enstrophy_flux(omega, Lx, Ly):
     ----------
     omega : ndarray (Ny, Nx)
         2D vorticity field
-    Lx, Ly : float
-        Domain size in x and y directions
+    dx, dy : float
+        Grid spacing in x and y directions
     
     Returns
     -------
@@ -293,6 +293,7 @@ def _compute_enstrophy_flux(omega, Lx, Ly):
         Enstrophy transfer spectrum
     """
     Ny, Nx = omega.shape
+    Lx, Ly = Nx*dx, Ny*dy
     
     # Wavenumber arrays
     kx = 2 * np.pi * fftfreq(Nx, d=Lx/Nx)
@@ -337,8 +338,10 @@ def _compute_enstrophy_flux(omega, Lx, Ly):
     T_omega_2d /= (Nx * Ny)**2
     
     # Bin into shells
-    k_max = np.sqrt(2) * max(np.max(np.abs(kx)), np.max(np.abs(ky)))
-    dk = 2 * np.pi / max(Lx, Ly)
+    # k_max = np.sqrt(2) * max(np.max(np.abs(kx)), np.max(np.abs(ky)))
+    # dk = 2 * np.pi / max(Lx, Ly)
+    k_max = np.sqrt((np.pi/dx)**2 + (np.pi/dy)**2)
+    dk = 2*np.pi / min(Lx, Ly)   # = 2π/256 = Δky    
     k_bins = np.arange(0, k_max, dk)
     n_bins = len(k_bins) - 1
     
@@ -357,12 +360,13 @@ def _compute_enstrophy_flux(omega, Lx, Ly):
     return k_centers, Pi_omega, T_omega
 
 
-def _compute_energy_flux(omega, Lx, Ly):
+def _compute_energy_flux(omega, dx=1.0, dy=1.0):
     """
     Compute spectral energy flux (for comparison to enstrophy flux).
     Negative flux at low k indicates inverse cascade.
     """
     Ny, Nx = omega.shape
+    Lx, Ly = Nx*dx, Ny*dy
     
     kx = 2 * np.pi * fftfreq(Nx, d=Lx/Nx)
     ky = 2 * np.pi * fftfreq(Ny, d=Ly/Ny)
