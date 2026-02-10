@@ -1,19 +1,5 @@
 """
 Train a linear probe using SAE features as input and the deformation as output.
-
-Top 5 features by R² for trajectory 50 for deformation:
-  Feature 13376 | R²=0.0031 | ρ=0.1105 (p=1.24e-113)
-  Feature  8952 | R²=0.0028 | ρ=0.0835 (p=1.65e-65)
-  Feature 22206 | R²=0.0026 | ρ=0.0746 (p=1.41e-52)
-  Feature 14734 | R²=0.0024 | ρ=0.1030 (p=5.63e-99)
-  Feature  9713 | R²=0.0023 | ρ=0.1174 (p=5.24e-128)
-
-Top 5 features by R² for dEdt:
-  Feature 13441 | R²=0.0011 | ρ=0.0762 (p=7.51e-55)
-  Feature 14734 | R²=0.0011 | ρ=0.0637 (p=7.07e-39)
-  Feature 16056 | R²=0.0010 | ρ=0.0765 (p=2.74e-55)
-  Feature 19092 | R²=0.0010 | ρ=0.0633 (p=2.52e-38)
-  Feature 17801 | R²=0.0009 | ρ=0.0699 (p=1.98e-46)
 """
 
 import gc
