@@ -69,9 +69,9 @@ def get_data_chunk(trajectory, step_offset, step, step_index, act_files, cfg, sa
 # Load the config
 cfg = OmegaConf.load("configs/train.yaml")
 
-feature_id = 11253 # from explore_global_metric.ipynb
+feature_id = 8245 #11253 # from explore_global_metric.ipynb
 # Load the trajectory
-trajectory_id = 50
+trajectory_id = 56 # 50
 # load trajectory
 trajectory, trajectory_metadata = get_trajectory(cfg.walrus.dataset, trajectory_id)
 
@@ -108,7 +108,7 @@ gs = fig.add_gridspec(
 
 # Top: spans all 4 columns
 ax_top = fig.add_subplot(gs[0, :])
-with open(Path("figures/preprint/data") / f"enstrophy_feature_{feature_id}.pkl", "rb") as f:
+with open(Path("figures/preprint/data") / f"enstrophy_feature_{feature_id}_traj_{trajectory_id}.pkl", "rb") as f:
     data = pickle.load(f)
 ax_top.plot(data['t'], data['enstrophy'] / np.max(data['enstrophy']), '-', color='xkcd:lavender', label=r'$\mathcal{E}$')
 ax_top.plot(data['t'], data['features'] / np.max(data['features']), '-', color='xkcd:orange', label=f'Feature {feature_id}')
@@ -162,5 +162,5 @@ fig.subplots_adjust(bottom=0.08, top=0.92, left=0.02, right=0.98)
 
 savedir = Path("figures/preprint")
 os.makedirs(savedir, exist_ok=True)
-plt.savefig(savedir / "enstrophy_feature.png")
+plt.savefig(savedir / f"enstrophy_feature_{feature_id}_traj_{trajectory_id}.png")
 plt.close()
