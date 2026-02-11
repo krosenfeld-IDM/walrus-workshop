@@ -36,17 +36,17 @@ logger = logging.getLogger(__name__)
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 cfg = OmegaConf.load("configs/train.yaml")
-trajectory_id = 3 # 56 # 56
-ref_trajectory_id = "all"
+trajectory_id = 56 # 56 # 50 
+ref_trajectory_id = 56
 target_steps = [15, 40, 60, 80]
 n_top_features = 10
 
 # ── Load ranked feature list ──────────────────────────────────────────────────
 # Source /home/krosenfeld/projects/walrus-workshop/experiments/well/explore_global_metric.ipynb
-# with open(Path("figures/preprint/data") / f"enstrophy_feature_list_traj_{ref_trajectory_id}.pkl", "rb") as f:
-#     feature_list = pickle.load(f)
-with open(Path("metrics") / "enstrophy_rho" / "feature_list_enstrophy.pkl", "rb") as f:
+with open(Path("figures/preprint/data") / f"enstrophy_feature_list_traj_{ref_trajectory_id}.pkl", "rb") as f:
     feature_list = pickle.load(f)
+# with open(Path("metrics") / "enstrophy_rho" / "feature_list_enstrophy.pkl", "rb") as f:
+#     feature_list = pickle.load(f)
 top_feature_ids = feature_list["feature_ids"][:n_top_features]
 logger.info(f"Top {n_top_features} features: {top_feature_ids}")
 
@@ -193,13 +193,13 @@ with PdfPages(pdf_path) as pdf:
             # Each slot occupies half the page height
             # slot 0: top half, slot 1: bottom half
             # Within each slot: 4 rows (timeseries, spacer, tracer row, overlay row)
-            row_offset = slot * 4
+            row_offset = slot * 5
             gs = fig.add_gridspec(
-                nrows=8, ncols=4,
-                height_ratios=[1.2, 0.38, 1, 1, 1.2, 0.38, 1, 1],
+                nrows=9, ncols=4,
+                height_ratios=[1.2, 0.38, 1, 1, 0.6, 1.2, 0.38, 1, 1],
                 hspace=0.03, wspace=0.1,
                 top=0.95, bottom=0.3,
-                left=0.02, right=0.98,
+                left=0.118, right=0.882,
             )
 
             # Time-series panel
