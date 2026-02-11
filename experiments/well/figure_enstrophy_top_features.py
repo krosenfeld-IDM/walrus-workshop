@@ -36,14 +36,16 @@ logger = logging.getLogger(__name__)
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 cfg = OmegaConf.load("configs/train.yaml")
-trajectory_id = 50 # 56 # 56
-ref_trajectory_id = 50
+trajectory_id = 3 # 56 # 56
+ref_trajectory_id = "all"
 target_steps = [15, 40, 60, 80]
 n_top_features = 10
 
 # ── Load ranked feature list ──────────────────────────────────────────────────
 # Source /home/krosenfeld/projects/walrus-workshop/experiments/well/explore_global_metric.ipynb
-with open(Path("figures/preprint/data") / f"enstrophy_feature_list_traj_{ref_trajectory_id}.pkl", "rb") as f:
+# with open(Path("figures/preprint/data") / f"enstrophy_feature_list_traj_{ref_trajectory_id}.pkl", "rb") as f:
+#     feature_list = pickle.load(f)
+with open(Path("metrics") / "enstrophy_rho" / "feature_list_enstrophy.pkl", "rb") as f:
     feature_list = pickle.load(f)
 top_feature_ids = feature_list["feature_ids"][:n_top_features]
 logger.info(f"Top {n_top_features} features: {top_feature_ids}")
