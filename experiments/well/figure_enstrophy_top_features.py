@@ -36,12 +36,14 @@ logger = logging.getLogger(__name__)
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 cfg = OmegaConf.load("configs/train.yaml")
-trajectory_id = 50
+trajectory_id = 50 # 56 # 56
+ref_trajectory_id = 50
 target_steps = [15, 40, 60, 80]
 n_top_features = 10
 
 # ── Load ranked feature list ──────────────────────────────────────────────────
-with open(Path("figures/preprint/data") / f"enstrophy_feature_list_traj_{trajectory_id}.pkl", "rb") as f:
+# Source /home/krosenfeld/projects/walrus-workshop/experiments/well/explore_global_metric.ipynb
+with open(Path("figures/preprint/data") / f"enstrophy_feature_list_traj_{ref_trajectory_id}.pkl", "rb") as f:
     feature_list = pickle.load(f)
 top_feature_ids = feature_list["feature_ids"][:n_top_features]
 logger.info(f"Top {n_top_features} features: {top_feature_ids}")
@@ -170,7 +172,7 @@ logger.info("Spatial data computed.")
 # ── Generate PDF ─────────────────────────────────────────────────────────────
 savedir = Path("figures/preprint")
 os.makedirs(savedir, exist_ok=True)
-pdf_path = savedir / "enstrophy_top_features.pdf"
+pdf_path = savedir / f"enstrophy_top_features_traj_{trajectory_id}_ref_{ref_trajectory_id}.pdf"
 
 cmap = LinearSegmentedColormap.from_list('mask', [(1, 0, 0, 0), (1, 0, 0, 0.6)])
 extent = (0.5, 512.5, 256.5, 0.5)
@@ -194,7 +196,7 @@ with PdfPages(pdf_path) as pdf:
                 nrows=8, ncols=4,
                 height_ratios=[1.2, 0.38, 1, 1, 1.2, 0.38, 1, 1],
                 hspace=0.03, wspace=0.1,
-                top=0.95, bottom=0.03,
+                top=0.95, bottom=0.3,
                 left=0.02, right=0.98,
             )
 
