@@ -62,16 +62,17 @@ def get_data_chunk(trajectory, step_offset, step, step_index, act_files, cfg, sa
     for ix in range(32):
         for iy in range(32):
             token = simulation_chunk[step_offset, iy*scale_y:(iy+1)*scale_y, ix*scale_x:scale_x*(ix+1), :]
-            enstrophy[iy, ix] = metrics.compute_enstrophy(token[:, :, 2], token[:, :, 3])[0]
+            # enstrophy[iy, ix] = metrics.compute_enstrophy(token[:, :, 2], token[:, :, 3])[0]
+            enstrophy[iy, ix] = metrics.compute_deformation(token[:, :, 2], token[:, :, 3])[0].mean()
 
     return simulation_chunk[step_offset, ..., 0], enstrophy, code[step_offset, ..., feature_id]
 
 # Load the config
 cfg = OmegaConf.load("configs/train.yaml")
 
-feature_id = 8245 #11253 # from explore_global_metric.ipynb
+feature_id = 4921 # 22206 # from explore_enstrophy_flux.ipynb
 # Load the trajectory
-trajectory_id = 56 # 50
+trajectory_id = 50
 # load trajectory
 trajectory, trajectory_metadata = get_trajectory(cfg.walrus.dataset, trajectory_id)
 
@@ -108,13 +109,13 @@ gs = fig.add_gridspec(
 
 # Top: spans all 4 columns
 ax_top = fig.add_subplot(gs[0, :])
-with open(Path("figures/preprint/data") / f"enstrophy_feature_{feature_id}_traj_{trajectory_id}.pkl", "rb") as f:
-    data = pickle.load(f)
-ax_top.plot(data['t'], data['enstrophy'] / np.max(data['enstrophy']), '-', color='xkcd:lavender', label=r'$\mathcal{E}$')
-ax_top.plot(data['t'], data['features'] / np.max(data['features']), '-', color='xkcd:orange', label=f'Feature {feature_id}')
+# with open(Path("figures/preprint/data") / f"enstrophy_feature_{feature_id}.pkl", "rb") as f:
+#     data = pickle.load(f)
+# ax_top.plot(data['t'], data['enstrophy'] / np.max(data['enstrophy']), '-', color='xkcd:lavender', label=r'$\mathcal{E}$')
+# ax_top.plot(data['t'], data['features'] / np.max(data['features']), '-', color='xkcd:orange', label=f'Feature {feature_id}')
 ax_top.set_xlabel("Timestep")
 ax_top.legend(frameon=False, fontsize=10, loc='upper right')
-ax_top.set_xlim(data['t'][0], data['t'][-1])
+# ax_top.set_xlim(data['t'][0], data['t'][-1])
 ax_top.set_ylim(0, None)
 
 # Bottom: 2 rows x 4 columns
@@ -122,7 +123,7 @@ cmap = LinearSegmentedColormap.from_list('mask', [(1, 0, 0, 0), (1, 0, 0, 0.6)])
 axs = [[fig.add_subplot(gs[r, c]) for c in range(4)] for r in (2, 3)]
 # Flatten if you prefer: axs = [ax for row in axs for ax in row]
 
-target_steps = [15, 40, 60, 80]
+target_steps = [5, 10, 15, 20]
 extent = (0.5, 512.5, 256.5, 0.5)
 for i, target_step in enumerate(target_steps):
     step_index = np.argwhere(steps <= target_step)[-1][0]
@@ -162,5 +163,5 @@ fig.subplots_adjust(bottom=0.08, top=0.92, left=0.02, right=0.98)
 
 savedir = Path("figures/preprint")
 os.makedirs(savedir, exist_ok=True)
-plt.savefig(savedir / f"enstrophy_feature_{feature_id}_traj_{trajectory_id}.png")
+plt.savefig(savedir / "pi_plateau_feature.png")
 plt.close()
